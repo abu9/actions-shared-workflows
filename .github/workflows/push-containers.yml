@@ -2,11 +2,31 @@ name: Build and Push prebuilt tools container
 
 on:
   workflow_call:
+    inputs:
+      repo_url:
+        required: true
+        type: string
+      repo_branch:
+        required: true
+        type: string
+      target:
+        required: true
+        type: string
+      subtarget:
+        required: true
+        type: string
+      author:
+        required: true
+        type: string
+      build_tools:
+        type: boolean
+      build_toolchain:
+        type: boolean 
 
 jobs:
   determine-container-info:
     name: Determine needed info to push containers
-    if: ${{ github.repository_owner  == 'openwrt' }}
+    # if: ${{ github.repository_owner  == 'openwrt' }}
     runs-on: ubuntu-latest
     outputs:
       owner-lc: ${{ steps.generate-owner-lc.outputs.owner-lc }}
@@ -34,28 +54,34 @@ jobs:
           CONTAINER_TAG=latest
 
           if [ ${{ github.ref_type }} == "branch" ]; then
-            if echo "${{ github.ref_name }}" | grep -q -E 'openwrt-[0-9][0-9]\.[0-9][0-9]'; then
-              CONTAINER_TAG="$(echo ${{ github.ref_name }} | sed 's/^\(openwrt-[0-9][0-9]\.[0-9][0-9]\).*/\1/')"
+            if echo "${{ inputs.repo_branch }}" | grep -q -E 'openwrt-[0-9][0-9]\.[0-9][0-9]'; then
+              CONTAINER_TAG="$(echo ${{ inputs.repo_branch }} | sed 's/^\(openwrt-[0-9][0-9]\.[0-9][0-9]\).*/\1/')"
             fi
           elif [ ${{ github.ref_type }} == "tag" ]; then
-            if echo "${{ github.ref_name }}" | grep -q -E 'v[0-9][0-9]\.[0-9][0-9]\..+'; then
-              CONTAINER_TAG=openwrt-"$(echo ${{ github.ref_name }} | sed 's/v\([0-9][0-9]\.[0-9][0-9]\)\..\+/\1/')"
+            if echo "${{ inputs.repo_branch }}" | grep -q -E 'v[0-9][0-9]\.[0-9][0-9]\..+'; then
+              CONTAINER_TAG=openwrt-"$(echo ${{ inputs.repo_branch }} | sed 's/v\([0-9][0-9]\.[0-9][0-9]\)\..\+/\1/')"
             fi
           fi
-
+          CONTAINER_TAG=${{ inputs.author }}_"$CONTAINER_TAG"
           echo "Container tag to push for tools and toolchain is $CONTAINER_TAG"
           echo "container-tag=$CONTAINER_TAG" >> "$GITHUB_OUTPUT"
 
   build-linux-buildbot:
     name: Build tools with buildbot container
-    if: ${{ github.repository_owner  == 'openwrt' }}
+    needs: determine-container-info    
     uses: ./.github/workflows/reusable_build-tools.yml
     with:
-      generate_prebuilt_artifacts: true
+      generate_prebuilt_artifacts: true 
+      repo_url: ${{ inputs.repo_url }}
+      repo_branch: ${{ inputs.repo_branch }}
+      author: ${{ inputs.author }}
+      owner-lc: ${{ needs.determine-container-info.outputs.owner-lc}}
+      container-tag: ${{ needs.determine-container-info.outputs.container-tag }}
+      build_tools: ${{ inputs.build_tools }}
 
   push-tools-container:
     needs: [ determine-container-info, build-linux-buildbot ]
-    if: ${{ github.repository_owner  == 'openwrt' }}
+    if: ${{ !cancelled() && needs.build-linux-buildbot.outputs.push == 'true' }}
     name: Push prebuilt tools container
     runs-on: ubuntu-latest
 
@@ -67,7 +93,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          repository: openwrt/actions-shared-workflows
+          repository: abu9/actions-shared-workflows
           sparse-checkout: .github/dockerfiles/Dockerfile.tools
           sparse-checkout-cone-mode: false
 
@@ -94,69 +120,40 @@ jobs:
           tags: ghcr.io/${{ needs.determine-container-info.outputs.owner-lc }}/tools:${{ needs.determine-container-info.outputs.container-tag }}
           file: .github/dockerfiles/Dockerfile.tools
 
-  determine-targets:
-    name: Set targets
-    if: ${{ github.repository_owner  == 'openwrt' }}
-    runs-on: ubuntu-latest
-    outputs:
-      target: ${{ steps.find_targets.outputs.target }}
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set targets
-        id: find_targets
-        run: |
-          export TARGETS="$(perl ./scripts/dump-target-info.pl targets 2>/dev/null \
-            | awk '{ print $1 }')"
-
-          JSON='['
-          FIRST=1
-          for TARGET in $TARGETS; do
-            TUPLE='{"target":"'"$(echo $TARGET | cut -d "/" -f 1)"'","subtarget":"'"$(echo $TARGET | cut -d "/" -f 2)"'"}'
-            [[ $FIRST -ne 1 ]] && JSON="$JSON"','
-            JSON="$JSON""$TUPLE"
-            FIRST=0
-          done
-          JSON="$JSON"']'
-
-          echo -e "\n---- targets ----\n"
-          echo "$JSON"
-          echo -e "\n---- targets ----\n"
-
-          echo "target=$JSON" >> $GITHUB_OUTPUT
-
   build:
     name: Build Target Toolchain
-    if: ${{ github.repository_owner  == 'openwrt' }}
-    needs: [ determine-targets, push-tools-container ]
+    if: ${{ !cancelled() && inputs.build_toolchain }}
+    needs: [build-linux-buildbot, push-tools-container ]
     permissions:
       contents: read
       packages: read
       actions: write
-    strategy:
-      fail-fast: False
-      matrix:
-        include: ${{fromJson(needs.determine-targets.outputs.target)}}
+
+    # strategy:
+    #   fail-fast: False
+    #   matrix:
+    #     include: ${{fromJson(needs.determine-targets.outputs.target)}}
     uses: ./.github/workflows/reusable_build.yml
     with:
-      target: ${{ matrix.target }}
-      subtarget: ${{ matrix.subtarget }}
+      target: ${{ inputs.target }}
+      subtarget: ${{ inputs.subtarget }}
+      repo_url: ${{ inputs.repo_url }}
+      repo_branch: ${{ inputs.repo_branch }}  
+      author: ${{ inputs.author}}
       build_toolchain: true
       build_external_toolchain: true
       upload_external_toolchain: true
 
   push-toolchain-container:
     name: Push Target Toolchain container
-    if: ${{ github.repository_owner  == 'openwrt' }}
-    needs: [ determine-container-info, determine-targets, build ]
+    if: ${{ !cancelled() && needs.build.outputs.push == 'true' }}
+    needs: [ determine-container-info, build ]
     runs-on: ubuntu-latest
 
-    strategy:
-      fail-fast: False
-      matrix:
-        include: ${{fromJson(needs.determine-targets.outputs.target)}}
+    # strategy:
+    #   fail-fast: False
+    #   matrix:
+    #     include: ${{fromJson(needs.determine-targets.outputs.target)}}
 
     permissions:
       contents: read
@@ -166,20 +163,20 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          repository: openwrt/actions-shared-workflows
+          repository: abu9/actions-shared-workflows
           sparse-checkout: .github/dockerfiles/Dockerfile.toolchain
           sparse-checkout-cone-mode: false
 
       - name: Download external toolchain from build job
         uses: actions/download-artifact@v4
         with:
-          name: ${{ matrix.target }}-${{ matrix.subtarget }}-external-toolchain
+          name: ${{ inputs.target }}-${{ inputs.subtarget }}-external-toolchain
 
       - name: Find external toolchain name
         id: get-toolchain-name
         run: |
-          TOOLCHAIN_NAME=$(ls | grep toolchain-${{ matrix.target }}-${{ matrix.subtarget }})
-          echo "toolchain-name=$TOOLCHAIN_NAME" >> $GITHUB_OUTPUT
+          TOOLCHAIN_NAME=$(ls bin/targets/${{inputs.target }}/${{ inputs.subtarget }}/* | grep toolchain)
+          [ -n "$TOOLCHAIN_NAME" ] && echo "toolchain-name=$TOOLCHAIN_NAME" >> $GITHUB_OUTPUT
 
       - name: Login to GitHub Container Registry
         uses: docker/login-action@v3
@@ -193,7 +190,7 @@ jobs:
         with:
           context: .
           push: true
-          tags: ghcr.io/${{ needs.determine-container-info.outputs.owner-lc }}/toolchain:${{ matrix.target }}-${{ matrix.subtarget }}-${{ needs.determine-container-info.outputs.container-tag }}
+          tags: ghcr.io/${{ needs.determine-container-info.outputs.owner-lc }}/toolchain:${{ inputs.target }}-${{ inputs.subtarget }}-${{ needs.determine-container-info.outputs.container-tag }}
           file: .github/dockerfiles/Dockerfile.toolchain
           build-args: |
             OWNER_LC=${{ needs.determine-container-info.outputs.owner-lc }}

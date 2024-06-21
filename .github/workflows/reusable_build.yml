@@ -7,6 +7,9 @@ on:
     outputs:
       ccache_tag:
         value: ${{ jobs.setup_build.outputs.ccache_tag }}
+      push:
+        value: ${{ jobs.build.outputs.push}}
+    
     inputs:
       container_name:
         type: string
@@ -37,7 +40,7 @@ on:
         type: boolean
       use_openwrt_container:
         type: boolean
-        default: true
+        # default: true
       coverity_project_name:
         type: string
         default: OpenWrt
@@ -72,7 +75,19 @@ on:
         default: true
       check_packages_list:
         type: string
-
+      repo_url:
+        required: true
+        type: string
+      repo_branch:
+        required: true
+        type: string
+      author:
+        required: true
+        type: string
+      config_name:
+        description: 'Config file name'
+        type: string
+        
 permissions:
   contents: read
 
@@ -86,8 +101,8 @@ jobs:
       ccache_name: ${{ steps.determine_ccache_name.outputs.ccache_name }}
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      # - name: Checkout
+      #   uses: actions/checkout@v4
 
       - name: Set lower case owner name
         id: lower_owner
@@ -110,14 +125,14 @@ jobs:
               BASE_BRANCH="${{ github.base_ref }}"
             fi
           elif [ ${{ github.ref_type }} == "branch" ]; then
-            if echo "${{ github.ref_name }}" | grep -q -E '^openwrt-[0-9][0-9]\.[0-9][0-9]$'; then
-              BASE_BRANCH=${{ github.ref_name }}
-            elif echo "${{ github.ref_name }}" | grep -q -E '^openwrt-[0-9][0-9]\.[0-9][0-9]-'; then
-              BASE_BRANCH="$(echo ${{ github.ref_name }} | sed 's/^\(openwrt-[0-9][0-9]\.[0-9][0-9]\)-.*/\1/')"
+            if echo "${{ inputs.repo_branch }}" | grep -q -E '^openwrt-[0-9][0-9]\.[0-9][0-9]$'; then
+              BASE_BRANCH=${{ inputs.repo_branch }}
+            elif echo "${{ inputs.repo_branch }}" | grep -q -E '^openwrt-[0-9][0-9]\.[0-9][0-9]-'; then
+              BASE_BRANCH="$(echo ${{ inputs.repo_branch }} | sed 's/^\(openwrt-[0-9][0-9]\.[0-9][0-9]\)-.*/\1/')"
             fi
           elif [ ${{ github.ref_type }} == "tag" ]; then
-            if echo "${{ github.ref_name }}" | grep -q -E '^v[0-9][0-9]\.[0-9][0-9]\..+'; then
-              BASE_BRANCH=openwrt-"$(echo ${{ github.ref_name }} | sed 's/^v\([0-9][0-9]\.[0-9][0-9]\)\..\+/\1/')"
+            if echo "${{ inputs.repo_branch }}" | grep -q -E '^v[0-9][0-9]\.[0-9][0-9]\..+'; then
+              BASE_BRANCH=openwrt-"$(echo ${{ inputs.repo_branch }} | sed 's/^v\([0-9][0-9]\.[0-9][0-9]\)\..\+/\1/')"
             fi
           fi
 
@@ -136,7 +151,7 @@ jobs:
           CONTAINER_TAG: ${{ steps.determine_base_branch.outputs.base_branch != 'main' && steps.determine_base_branch.outputs.base_branch || 'latest' }}
         run: |
           CONTAINER_NAME=${{ inputs.container_name }}
-          CONTAINER_TAG=${{ env.CONTAINER_TAG }}
+          CONTAINER_TAG=${{ inputs.author }}_${{ env.CONTAINER_TAG }}
 
           if [ "$CONTAINER_NAME" = "toolchain" ]; then
             GHCR_TOKEN=$(echo ${{ secrets.GITHUB_TOKEN }} | base64)
@@ -151,6 +166,7 @@ jobs:
           fi
 
           echo "Tools container to use $CONTAINER_NAME:$CONTAINER_TAG"
+          echo "container_tag=$CONTAINER_TAG" >> $GITHUB_OUTPUT
           echo "container_name=$CONTAINER_NAME:$CONTAINER_TAG" >> $GITHUB_OUTPUT
 
       - name: Determine container
@@ -160,11 +176,11 @@ jobs:
       - name: Determine ccache tag
         id: determine_ccache_tag
         if: steps.determine_base_branch.outputs.base_branch != 'main'
-        run: echo "ccache_tag=${{ format('-{0}', steps.determine_base_branch.outputs.base_branch) }}" >> $GITHUB_OUTPUT
+        run: echo "ccache_tag=${{ inputs.author }}_${{ format('-{0}', steps.determine_base_branch.outputs.base_branch) }}" >> $GITHUB_OUTPUT
 
       - name: Determine ccache name
         id: determine_ccache_name
-        run: echo "ccache_name=ccache-${{ inputs.ccache_type }}-${{ inputs.target }}-${{ inputs.subtarget }}${{ inputs.testing == true && '-testing' || '' }}${{ steps.determine_ccache_tag.outputs.ccache_tag }}" >> $GITHUB_OUTPUT
+        run: echo "ccache_name=ccache-${{ inputs.ccache_type }}-${{ inputs.testing == true && '-testing' || '' }}${{ steps.determine_ccache_tag.outputs.ccache_tag }}" >> $GITHUB_OUTPUT
 
   check:
     name: Check packages for ${{ inputs.target }}/${{ inputs.subtarget }}
@@ -181,11 +197,18 @@ jobs:
     steps:
       - name: Checkout master directory
         uses: actions/checkout@v4
+
+      - name: Checkout openwrt
+        uses: actions/checkout@v4
         with:
+          repository: ${{ inputs.repo_url }}
+          ref: ${{ inputs.repo_branch }}
           path: openwrt
 
       - name: Fix permission
         run: |
+
+          cp .github/workflows/scripts/ext-tools.sh openwrt/scripts/ext-tools.sh
           chown -R buildbot:buildbot openwrt
 
       - name: Prepare prebuilt tools
@@ -271,6 +294,8 @@ jobs:
     name: Build ${{ inputs.target }}/${{ inputs.subtarget }}
     needs: setup_build
     runs-on: ubuntu-latest
+    outputs:
+      push: ${{ steps.setoutput.outputs.push }}
 
     container: ghcr.io/${{ needs.setup_build.outputs.container }}
 
@@ -280,38 +305,15 @@ jobs:
       actions: write
 
     steps:
-      - name: Checkout master directory
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Checkout openwrt
         uses: actions/checkout@v4
         with:
+          repository: ${{ inputs.repo_url }}
+          ref: ${{ inputs.repo_branch }}
           path: openwrt
-
-      - name: Checkout packages feed
-        if: inputs.include_feeds == true
-        uses: actions/checkout@v4
-        with:
-          repository: openwrt/packages
-          path: openwrt/feeds/packages
-
-      - name: Checkout luci feed
-        if: inputs.include_feeds == true
-        uses: actions/checkout@v4
-        with:
-          repository: openwrt/luci
-          path: openwrt/feeds/luci
-
-      - name: Checkout routing feed
-        if: inputs.include_feeds == true
-        uses: actions/checkout@v4
-        with:
-          repository: openwrt/routing
-          path: openwrt/feeds/routing
-
-      - name: Checkout telephony feed
-        if: inputs.include_feeds == true
-        uses: actions/checkout@v4
-        with:
-          repository: openwrt/telephony
-          path: openwrt/feeds/telephony
 
       - name: Parse toolchain file
         if: inputs.build_toolchain == false
@@ -324,40 +326,45 @@ jobs:
           fi
 
           TOOLCHAIN_PATH=snapshots
+          DOWNLOADSERVER="https://downloads.cdn.openwrt.org"
+          if ${{ inputs.author}} = "openwrt"; then
+            if [ -n "${{ github.base_ref }}" ]; then
+              if echo "${{ github.base_ref }}" | grep -q -E '^openwrt-[0-9][0-9]\.[0-9][0-9]$'; then
+                major_ver="$(echo ${{ github.base_ref }} | sed 's/^openwrt-/v/')"
+              fi
+            elif [ "${{ github.ref_type }}" = "branch" ]; then
+              if echo "${{ inputs.repo_branch }}" | grep -q -E '^openwrt-[0-9][0-9]\.[0-9][0-9]$'; then
+                major_ver="$(echo ${{ inputs.repo_branch }} | sed 's/^openwrt-/v/')"
+              elif echo "${{ inputs.repo_branch }}" | grep -q -E '^openwrt-[0-9][0-9]\.[0-9][0-9]-'; then
+                major_ver="$(echo ${{ inputs.repo_branch }} | sed 's/^openwrt-\([0-9][0-9]\.[0-9][0-9]\)-.*/v\1/')"
+              fi
+            elif [ "${{ github.ref_type }}" = "tag" ]; then
+              if echo "${{ inputs.repo_branch }}" | grep -q -E '^v[0-9][0-9]\.[0-9][0-9]\..+'; then
+                major_ver="$(echo ${{ inputs.repo_branch }} | sed 's/^\(v[0-9][0-9]\.[0-9][0-9]\)\..\+/\1/')"
+              fi
+            fi
 
-          if [ -n "${{ github.base_ref }}" ]; then
-            if echo "${{ github.base_ref }}" | grep -q -E '^openwrt-[0-9][0-9]\.[0-9][0-9]$'; then
-              major_ver="$(echo ${{ github.base_ref }} | sed 's/^openwrt-/v/')"
+            if [ -n "$major_ver" ]; then
+              git fetch --tags -f
+              latest_tag="$(git tag --sort=-creatordate -l $major_ver* | head -n1)"
+              if [ -n "$latest_tag" ]; then
+                TOOLCHAIN_PATH=releases/$(echo $latest_tag | sed 's/^v//')
+              fi
             fi
-          elif [ "${{ github.ref_type }}" = "branch" ]; then
-            if echo "${{ github.ref_name }}" | grep -q -E '^openwrt-[0-9][0-9]\.[0-9][0-9]$'; then
-              major_ver="$(echo ${{ github.ref_name }} | sed 's/^openwrt-/v/')"
-            elif echo "${{ github.ref_name }}" | grep -q -E '^openwrt-[0-9][0-9]\.[0-9][0-9]-'; then
-              major_ver="$(echo ${{ github.ref_name }} | sed 's/^openwrt-\([0-9][0-9]\.[0-9][0-9]\)-.*/v\1/')"
-            fi
-          elif [ "${{ github.ref_type }}" = "tag" ]; then
-            if echo "${{ github.ref_name }}" | grep -q -E '^v[0-9][0-9]\.[0-9][0-9]\..+'; then
-              major_ver="$(echo ${{ github.ref_name }} | sed 's/^\(v[0-9][0-9]\.[0-9][0-9]\)\..\+/\1/')"
-            fi
+          elif ${{ inputs.author}} = "immortalwrt" then;
+            TOOLCHAIN_PATH=releases/${{ inputs.repo_branch }}-SNAPSHOT
+            DOWNLOADSERVER="https://mirrors.vsean.net/"
           fi
 
-          if [ -n "$major_ver" ]; then
-            git fetch --tags -f
-            latest_tag="$(git tag --sort=-creatordate -l $major_ver* | head -n1)"
-            if [ -n "$latest_tag" ]; then
-              TOOLCHAIN_PATH=releases/$(echo $latest_tag | sed 's/^v//')
-            fi
-          fi
-
-          SUMS_FILE="https://downloads.cdn.openwrt.org/$TOOLCHAIN_PATH/targets/${{ inputs.target }}/${{ inputs.subtarget }}/sha256sums"
-          if curl $SUMS_FILE | grep -q ".*openwrt-toolchain.*tar.xz"; then
-            TOOLCHAIN_STRING="$( curl $SUMS_FILE | grep ".*openwrt-toolchain.*tar.xz")"
-            TOOLCHAIN_FILE=$(echo "$TOOLCHAIN_STRING" | sed -n -e 's/.*\(openwrt-toolchain.*\).tar.xz/\1/p')
+          SUMS_FILE="$DOWNLOADSERVER/$TOOLCHAIN_PATH/targets/${{ inputs.target }}/${{ inputs.subtarget }}/sha256sums"
+          if curl $SUMS_FILE | grep -q ".*wrt-toolchain.*tar.xz"; then
+            TOOLCHAIN_STRING="$( curl $SUMS_FILE | grep ".*wrt-toolchain.*tar.xz")"
+            TOOLCHAIN_FILE=$(echo "$TOOLCHAIN_STRING" | sed -n -e 's/.*\(wrt-toolchain.*\).tar.xz/\1/p')
             
             echo "toolchain-type=external_toolchain" >> $GITHUB_OUTPUT
-          elif curl $SUMS_FILE | grep -q ".*openwrt-sdk.*tar.xz"; then
-            TOOLCHAIN_STRING="$( curl $SUMS_FILE | grep ".*openwrt-sdk.*tar.xz")"
-            TOOLCHAIN_FILE=$(echo "$TOOLCHAIN_STRING" | sed -n -e 's/.*\(openwrt-sdk.*\).tar.xz/\1/p')
+          elif curl $SUMS_FILE | grep -q ".*wrt-sdk.*tar.xz"; then
+            TOOLCHAIN_STRING="$( curl $SUMS_FILE | grep ".*wrt-sdk.*tar.xz")"
+            TOOLCHAIN_FILE=$(echo "$TOOLCHAIN_STRING" | sed -n -e 's/.*\(wrt-sdk.*\).tar.xz/\1/p')
 
             echo "toolchain-type=external_sdk" >> $GITHUB_OUTPUT
           else
@@ -366,6 +373,7 @@ jobs:
 
           echo "TOOLCHAIN_FILE=$TOOLCHAIN_FILE" >> "$GITHUB_ENV"
           echo "TOOLCHAIN_PATH=$TOOLCHAIN_PATH" >> "$GITHUB_ENV"
+          echo "DOWNLOADSERVER=$DOWNLOADSERVER" >> "$GITHUB_ENV"
 
       - name: Download and extract ccache cache from s3
         id: restore-ccache-cache-s3
@@ -375,14 +383,15 @@ jobs:
           S3_LINK=https://s3-ccache.openwrt-ci.ansuel.com
           CCACHE_TAR=${{ needs.setup_build.outputs.ccache_name }}.tar
 
-          if curl -o /dev/null -s --head --fail $S3_LINK/$CCACHE_TAR; then
-            wget -O - $S3_LINK/$CCACHE_TAR | tar -xf -
-            echo "cache-hit=true" >> $GITHUB_OUTPUT
-          fi
+          # if curl -o /dev/null -s --head --fail $S3_LINK/$CCACHE_TAR; then
+          #   wget -O - $S3_LINK/$CCACHE_TAR | tar -xf -
+          #   echo "cache-hit=true" >> $GITHUB_OUTPUT
+          # fi
 
       - name: Fix permission
         run: |
-          chown -R buildbot:buildbot openwrt
+          cp .github/workflows/scripts/ext-tools.sh openwrt/scripts/ext-tools.sh
+          chown -R buildbot:buildbot .
 
       - name: Prepare prebuilt tools
         shell: su buildbot -c "sh -e {0}"
@@ -394,8 +403,22 @@ jobs:
 
           ./scripts/ext-tools.sh --refresh
 
+      - name: Prepare custom scripts
+        if: inputs.build_full == true
+        shell: su buildbot -c "sh -e {0}"       
+        run: |
+          [ -d "files" ] && mv -f files openwrt/files
+          [ -e "${FEEDS_CONF}" ] && cp -f "${FEEDS_CONF}" openwrt/feeds.conf.default
+          chmod +x "${GITHUB_WORKSPACE}"/diy-part1.sh "${GITHUB_WORKSPACE}"/diy-part2.sh
+      
+      - name: Load pre-custom script
+        if: inputs.build_full == true
+        shell: su buildbot -c "bash {0}"
+        working-directory: openwrt
+        run: ${GITHUB_WORKSPACE}/diy-part1.sh
+               
       - name: Update & Install feeds
-        if: inputs.include_feeds == true
+        if: inputs.build_full == true
         shell: su buildbot -c "sh -e {0}"
         working-directory: openwrt
         run: |
@@ -412,29 +435,58 @@ jobs:
           restore-keys: |
             ${{ needs.setup_build.outputs.ccache_name }}-
 
-      - name: Import GPG keys
-        shell: su buildbot -c "sh -e {0}"
-        if: inputs.build_toolchain == false && steps.parse-toolchain.outputs.toolchain-type != 'internal' && steps.parse-toolchain.outputs.toolchain-type != 'external_container'
-        run: gpg --receive-keys 0xCD84BCED626471F1 0x1D53D1877742E911 0xCD54E82DADB3684D
+      # - name: Import GPG keys
+      #   shell: su buildbot -c "sh -e {0}"
+      #   if: inputs.build_toolchain == false && steps.parse-toolchain.outputs.toolchain-type != 'internal' && steps.parse-toolchain.outputs.toolchain-type != 'external_container'
+      #   run: gpg --receive-keys 0xCD84BCED626471F1 0x1D53D1877742E911 0xCD54E82DADB3684D
 
       - name: Download external toolchain/sdk
         if: inputs.build_toolchain == false && steps.parse-toolchain.outputs.toolchain-type != 'internal' && steps.parse-toolchain.outputs.toolchain-type != 'external_container'
         shell: su buildbot -c "sh -e {0}"
         working-directory: openwrt
         run: |
-          wget https://downloads.cdn.openwrt.org/${{ env.TOOLCHAIN_PATH }}/targets/${{ inputs.target }}/${{ inputs.subtarget }}/${{ env.TOOLCHAIN_FILE }}.tar.xz
-          wget https://downloads.cdn.openwrt.org/${{ env.TOOLCHAIN_PATH }}/targets/${{ inputs.target }}/${{ inputs.subtarget }}/sha256sums.asc
-          wget https://downloads.cdn.openwrt.org/${{ env.TOOLCHAIN_PATH }}/targets/${{ inputs.target }}/${{ inputs.subtarget }}/sha256sums
+          wget ${{ env.DOWNLOADSERVER }}/${{ env.TOOLCHAIN_PATH }}/targets/${{ inputs.target }}/${{ inputs.subtarget }}/${{ env.TOOLCHAIN_FILE }}.tar.xz
+          wget ${{ env.DOWNLOADSERVER }}/${{ env.TOOLCHAIN_PATH }}/targets/${{ inputs.target }}/${{ inputs.subtarget }}/sha256sums.asc
+          wget ${{ env.DOWNLOADSERVER }}/${{ env.TOOLCHAIN_PATH }}/targets/${{ inputs.target }}/${{ inputs.subtarget }}/sha256sums
           gpg --with-fingerprint --verify sha256sums.asc
           sha256sum --check --ignore-missing sha256sums
           tar --xz -xf ${{ env.TOOLCHAIN_FILE }}.tar.xz
           rm ${{ env.TOOLCHAIN_FILE }}.tar.xz sha256sums
+
+      - name: Parse device info
+        id: device_info
+        if: inputs.build_full
+        shell: su buildbot -c "sh -e {0}"        
+        run: |
+          [ -e "${{ inputs.config_name }}" ] && cp -f "${{ inputs.config_name }}" openwrt/.config
+          cd openwrt
+          make defconfig
+
+          if [ "$(grep -ic '^CONFIG_TARGET_MULTI_PROFILE=y' .config)" -eq 1 ]; then
+            DEVICE_NAME='MULTI_PROFILE'
+          else
+            DEVICE_NAME=$(grep -e '^CONFIG_TARGET.*DEVICE.*=y' .config | sed -r 's/.*DEVICE_(.*)=y/\1/')
+          fi
+          
+          [ -n "$DEVICE_NAME" ] && echo "DEVICE_NAME=$DEVICE_NAME" >> $GITHUB_OUTPUT
+          echo "FILE_DATE=_$(date +"%Y%m%d%H%M")" >> $GITHUB_OUTPUT
 
       - name: Clean configuration
         shell: su buildbot -c "sh -e {0}"
         working-directory: openwrt
         run: |
           rm -rf .config
+
+      - name: Setup configuration
+        if: inputs.build_full == true
+        shell: su buildbot -c "sh -e {0}"     
+        run: cp -f ${{ inputs.config_name }} openwrt/.config
+                
+      - name: Load post-custom script
+        if: inputs.build_full == true
+        shell: su buildbot -c "bash {0}"      
+        working-directory: openwrt
+        run: ${GITHUB_WORKSPACE}/diy-part2.sh
 
       - name: Configure testing kernel
         if: inputs.testing == true
@@ -503,7 +555,7 @@ jobs:
           echo CONFIG_AUTOREMOVE=y >> .config
 
           ./scripts/ext-toolchain.sh \
-            --toolchain /external-toolchain/$(ls /external-toolchain/ | grep openwrt-toolchain)/toolchain-* \
+            --toolchain /external-toolchain/$(ls /external-toolchain/ | grep wrt-toolchain)/toolchain-* \
             --overwrite-config \
             --config ${{ inputs.target }}/${{ inputs.subtarget }}
 
@@ -624,7 +676,9 @@ jobs:
         if: inputs.build_external_toolchain == true
         shell: su buildbot -c "sh -e {0}"
         working-directory: openwrt
-        run: make target/toolchain/compile -j$(nproc) BUILD_LOG=1 || ret=$? .github/workflows/scripts/show_build_failures.sh
+        run: |
+          make target/toolchain/compile -j$(nproc) BUILD_LOG=1 || ret=$? .github/workflows/scripts/show_build_failures.sh
+          echo "${{ hashFiles('openwrt/toolchain/**') }}" > .toolchainhash
 
       - name: Coverity prepare toolchain
         if: inputs.coverity_check_packages != ''
@@ -673,8 +727,8 @@ jobs:
             --form token="${{ secrets.coverity_api_token }}" \
             --form email="contact@openwrt.org" \
             --form file=@cov-int.tar.gz \
-            --form version="${{ github.ref_name }}-${{ github.sha }}" \
-            --form description="OpenWrt ${{ github.ref_name }}-${{ github.sha }}" \
+            --form version="${{ inputs.repo_branch }}-${{ github.sha }}" \
+            --form description="OpenWrt ${{ inputs.repo_branch }}-${{ github.sha }}" \
             "https://scan.coverity.com/builds?project=${{ inputs.coverity_project_name }}"
 
       - name: Upload logs
@@ -725,17 +779,36 @@ jobs:
           retention-days: 1
 
       - name: Find external toolchain name
-        id: get-toolchain-name
+        id: get-toolchain-file
         if: inputs.upload_external_toolchain == true
         working-directory: openwrt
         run: |
-          TOOLCHAIN_NAME=$(ls bin/targets/${{inputs.target }}/${{ inputs.subtarget }} | grep toolchain)
-          echo "toolchain-name=$TOOLCHAIN_NAME" >> $GITHUB_OUTPUT
+          TOOLCHAIN_FILE=$(ls bin/targets/${{inputs.target }}/${{ inputs.subtarget }}/* | grep toolchain)
+          echo "toolchain-file=$TOOLCHAIN_FILE" >> $GITHUB_OUTPUT
 
       - name: Upload prebuilt toolchain
         if: inputs.upload_external_toolchain == true
         uses: actions/upload-artifact@v4
         with:
           name: ${{ inputs.target }}-${{ inputs.subtarget }}-external-toolchain
-          path: openwrt/bin/targets/${{ inputs.target }}/${{ inputs.subtarget }}/${{ steps.get-toolchain-name.outputs.toolchain-name }}
+          path: |
+            openwrt/${{ steps.get-toolchain-file.outputs.toolchain-file }}
+            openwrt/.toolchainhash
           retention-days: 1
+
+      # - name: Archive Firmware
+      #   if: inputs.build_full == true
+      #   shell: su buildbot -c "sh -e {0}"
+      #   working-directory: openwrt
+      #   run: tar -cf tools.tar staging_dir/host build_dir/host
+
+      - name: Upload Firmware
+        if: inputs.build_full == true
+        uses: actions/upload-artifact@v4
+        with:
+          name: OpenWrt_firmware_${{ steps.device_info.outputs.DEVICE_NAME }}${{ steps.device_info.outputs.FILE_DATE }}
+          path: openwrt/${{ steps.get-toolchain-file.outputs.toolchain-file }}
+
+      - name: Set output
+        id: setoutput
+        run: echo "push=true" >> $GITHUB_OUTPUT          

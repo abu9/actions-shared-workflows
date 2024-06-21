@@ -5,9 +5,30 @@ on:
     inputs:
       use_openwrt_container:
         type: boolean
-        default: true
+        # default: true
       generate_prebuilt_artifacts:
         type: boolean
+      repo_url:
+        required: true
+        type: string
+      repo_branch:
+        required: true
+        type: string
+      author:
+        required: true
+        type: string
+      owner-lc:
+        required: true
+        type: string
+      container-tag:
+        required: true
+        type: string
+      build_tools:
+        type: boolean
+        required: true
+    outputs:
+      push:
+        value: ${{ jobs.build.outputs.push}}
 
 permissions:
   contents: read
@@ -17,61 +38,88 @@ jobs:
     name: Determine needed info to push containers
     runs-on: ubuntu-latest
     outputs:
-      owner-lc: ${{ steps.generate-owner-lc.outputs.owner-lc }}
-      container-tag: ${{ steps.determine-container-tag.outputs.container-tag }}
+      ccache_name: ${{ steps.determine_ccache_name.outputs.ccache_name }}
+      use_tools_container: ${{ steps.check-container.outputs.use_tools_container}}
+      container_path: ${{ steps.check-container.outputs.container_path}}
 
     steps:
-      - name: Set lower case owner name
-        id: generate-owner-lc
-        env:
-          OWNER: ${{ github.repository_owner }}
+      - name: Determine ccache name
+        id: determine_ccache_name
+        run: echo "ccache_name=ccache-kernel-${{ inputs.container-tag }}" >> $GITHUB_OUTPUT
+
+      - name: check-container
+        id: check-container
         run: |
-          if [ ${{ inputs.use_openwrt_container }} == "true" ]; then
-            OWNER_LC=openwrt
+          USE_TOOLS_CONTAINER=false
+          CONTAINER_PATH=ghcr.io/openwrt/buildbot/buildworker-v3.8.0:v9
+
+          GHCR_TOKEN=$(echo ${{ secrets.GITHUB_TOKEN }} | base64)
+          GHCR_HEADER="Authorization: Bearer ${GHCR_TOKEN}"
+          GHCR_MANIFEST_LINK=https://ghcr.io/v2/${{ inputs.owner-lc }}/tools/manifests/${{ inputs.container-tag }}
+          # Check if container exist
+          if [ $(curl -s -o /dev/null -w "%{http_code}" -H "$GHCR_HEADER" -I "$GHCR_MANIFEST_LINK") == 200 ]; then
+            USE_TOOLS_CONTAINER=true
+            CONTAINER_PATH=ghcr.io/${{ inputs.owner-lc }}/tools:${{ inputs.container-tag }}
           fi
 
-          echo "owner-lc=${OWNER,,}" >> "$GITHUB_OUTPUT"
-
-      # Per branch tools container tag
-      # By default stick to latest
-      # For official test targetting openwrt stable branch
-      # Get the branch or parse the tag and push dedicated tools containers
-      # Any branch that will match this pattern openwrt-[0-9][0-9].[0-9][0-9]
-      # will refresh the tools container with the matching tag.
-      # (example branch openwrt-22.03 -> tools:openwrt-22.03)
-      # (example branch openwrt-22.03-test -> tools:openwrt-22.03)
-      - name: Determine tools container tag
-        id: determine-container-tag
-        run: |
-          CONTAINER_TAG=latest
-
-          if [ ${{ github.ref_type }} == "branch" ]; then
-            if echo "${{ github.ref_name }}" | grep -q -E 'openwrt-[0-9][0-9]\.[0-9][0-9]'; then
-              CONTAINER_TAG="$(echo ${{ github.ref_name }} | sed 's/^\(openwrt-[0-9][0-9]\.[0-9][0-9]\).*/\1/')"
-            fi
-          elif [ ${{ github.ref_type }} == "tag" ]; then
-            if echo "${{ github.ref_name }}" | grep -q -E 'v[0-9][0-9]\.[0-9][0-9]\..+'; then
-              CONTAINER_TAG=openwrt-"$(echo ${{ github.ref_name }} | sed 's/v\([0-9][0-9]\.[0-9][0-9]\)\..\+/\1/')"
-            fi
-          fi
-
-          echo "Container tag to push for tools and toolchain is $CONTAINER_TAG"
-          echo "container-tag=$CONTAINER_TAG" >> "$GITHUB_OUTPUT"
+          echo "use_tools_container=$USE_TOOLS_CONTAINER" | tee -a "$GITHUB_OUTPUT"
+          echo "container_path=$CONTAINER_PATH" | tee -a "$GITHUB_OUTPUT"
 
   check:
     name: Check tools
-    needs: determine-container-info
+    needs: [determine-container-info]
     runs-on: ubuntu-latest
-    container: ghcr.io/${{ needs.determine-container-info.outputs.owner-lc }}/tools:${{ needs.determine-container-info.outputs.container-tag }}
+    container: ${{ needs.determine-container-info.outputs.container_PATH }}
+    outputs: 
+      rebuild: ${{ steps.validate.outputs.rebuild }}
 
     steps:
-      - name: Checkout
+      - name: Checkout openwrt
         uses: actions/checkout@v4
         with:
+          repository: ${{ inputs.repo_url }}
+          ref: ${{ inputs.repo_branch }}
           path: openwrt
 
       - name: Fix permission
         run: chown -R buildbot:buildbot openwrt
+
+      - name: Validate tools
+        id: validate
+        if: needs.determine-container-info.outputs.use_tools_container == 'true'
+        run: |
+          TOOLSHASH=$(echo ${{ hashFiles('openwrt/include/**','openwrt/tools/**') }})
+          [ -f /.toolshash ] && [ $(grep -c "$TOOLSHASH" /.toolshash) -eq 1 ] || echo "rebuild=true" | tee -a "$GITHUB_OUTPUT"
+
+  build:
+    name: Build tools
+    if: ${{ inputs.build_tools || !needs.determine-container-info.outputs.use_tools_container || needs.check.outputs.rebuild }}
+    needs: [check,determine-container-info]
+    runs-on: ubuntu-latest
+    container: ${{ needs.determine-container-info.outputs.container_PATH }}
+    outputs:
+      push: ${{ steps.setoutput.outputs.push }}
+
+    permissions:
+      contents: read
+      packages: read
+      actions: write
+      
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Checkout openwrt source code
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.repo_url }}
+          ref: ${{ inputs.repo_branch }}
+          path: openwrt
+                    
+      - name: Fix permission
+        run: |
+          cp .github/workflows/scripts/ext-tools.sh openwrt/scripts/ext-tools.sh
+          chown -R buildbot:buildbot openwrt
 
       - name: Prepare prebuilt tools
         shell: su buildbot -c "sh -e {0}"
@@ -82,76 +130,28 @@ jobs:
           ln -s /prebuilt_tools/build_dir/host build_dir/host
 
           ./scripts/ext-tools.sh --refresh
-
-      - name: Set configs for tools container
-        shell: su buildbot -c "sh -e {0}"
-        working-directory: openwrt
-        run: |
-          touch .config
-          echo CONFIG_DEVEL=y >> .config
-          echo CONFIG_AUTOREMOVE=y >> .config
-          echo CONFIG_CCACHE=y >> .config
-          echo CONFIG_BUILD_ALL_HOST_TOOLS=y >> .config
-
-      - name: Make prereq
-        shell: su buildbot -c "sh -e {0}"
-        working-directory: openwrt
-        run: make defconfig
-
-      - name: Compile needed host tools
-        shell: su buildbot -c "sh -e {0}"
-        working-directory: openwrt
-        run: make tools/zstd/compile tools/quilt/compile -j$(nproc) BUILD_LOG=1 || ret=$? .github/workflows/scripts/show_build_failures.sh
-
-      - name: Download and check tools
-        shell: su buildbot -c "sh -e {0}"
-        working-directory: openwrt
-        run: make tools/download tools/check FIXUP=1 -j$(nproc) BUILD_LOG=1 || ret=$? .github/workflows/scripts/show_build_failures.sh
-
-      - name: Refresh tools
-        shell: su buildbot -c "sh -e {0}"
-        working-directory: openwrt
-        run: make tools/refresh -j$(nproc) BUILD_LOG=1 || ret=$? .github/workflows/scripts/show_build_failures.sh
-
-      - name: Validate checked tools
-        shell: su buildbot -c "sh -e {0}"
-        working-directory: openwrt
-        run: |
-          . .github/workflows/scripts/ci_helpers.sh
-
-          if git diff --name-only --exit-code; then
-            success "All tools seems ok"
-          else
-            err "Some package Makefiles requires fix. (run 'make package/check FIXUP=1' and force push this pr)"
-            err "You can also check the provided artifacts with the refreshed patch from this CI run."
-            mkdir tools-fixed
-            for f in $(git diff --name-only); do
-              cp --parents $f tools-fixed/
-            done
-            exit 1
-          fi
-
-      - name: Upload fixed tools
-        if: failure()
-        uses: actions/upload-artifact@v4
+          
+      - name: Restore ccache cache
+        id: restore-ccache-cache
+        uses: actions/cache/restore@v4
         with:
-          name: tools-fixed
-          path: openwrt/tools-fixed
+          path: openwrt/.ccache
+          key: ${{ needs.determine-container-info.outputs.ccache_name }}-${{ hashFiles('openwrt/include/**','openwrt/tools/**') }}
+          restore-keys: |
+            ${{ needs.determine-container-info.outputs.ccache_name }}-
 
-  build:
-    name: Build tools
-    needs: check
-    runs-on: ubuntu-latest
-    container: ghcr.io/openwrt/buildbot/buildworker-v3.8.0:v9
+      - name: Configure ccache and apply fixes
+        shell: su buildbot -c "sh -e {0}"
+        working-directory: openwrt
+        env:
+          SYSTEM_CCACHE_CONF: staging_dir/host/etc/ccache.conf
+        run: |
+          mkdir -p staging_dir/host/etc
+          touch $SYSTEM_CCACHE_CONF
 
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          path: openwrt
-
-      - name: Fix permission
-        run: chown -R buildbot:buildbot openwrt
+          echo compiler_type=gcc >> $SYSTEM_CCACHE_CONF
+          echo depend_mode=true >> $SYSTEM_CCACHE_CONF
+          echo sloppiness=file_macro,locale,time_macros >> $SYSTEM_CCACHE_CONF
 
       - name: Set configs for tools container
         shell: su buildbot -c "sh -e {0}"
@@ -171,7 +171,9 @@ jobs:
       - name: Build tools
         shell: su buildbot -c "sh -e {0}"
         working-directory: openwrt
-        run: make tools/install -j$(nproc) BUILD_LOG=1 || ret=$? .github/workflows/scripts/show_build_failures.sh
+        run: |
+          make tools/install -j$(nproc) BUILD_LOG=1 || ret=$? .github/workflows/scripts/show_build_failures.sh
+          echo "${{ hashFiles('openwrt/include/**','openwrt/tools/**') }}" > .toolshash 
 
       - name: Upload logs
         if: always()
@@ -198,5 +200,28 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: linux-buildbot-prebuilt-tools
-          path: openwrt/tools.tar
+          path: |
+            openwrt/tools.tar
+            openwrt/.toolshash
           retention-days: 1
+
+      - name: Delete already present ccache cache
+        if: steps.restore-ccache-cache.outputs.cache-hit == 'true'
+        uses: octokit/request-action@v2.x
+        with:
+          route: DELETE /repos/{repository}/actions/caches?key={key}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          INPUT_REPOSITORY: ${{ github.repository }}
+          INPUT_KEY: ${{ steps.restore-ccache-cache.outputs.cache-primary-key }}
+                    
+      - name: Save ccache cache
+        id: save-ccache-cache
+        uses: actions/cache/save@v4
+        with:
+          path: openwrt/.ccache
+          key: ${{ steps.restore-ccache-cache.outputs.cache-primary-key }}
+
+      - name: Set output
+        id: setoutput
+        run: echo "push=true" >> $GITHUB_OUTPUT

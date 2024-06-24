@@ -104,7 +104,7 @@ jobs:
       contents: read
       packages: read
       actions: write
-      
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -115,11 +115,9 @@ jobs:
           repository: ${{ inputs.repo_url }}
           ref: ${{ inputs.repo_branch }}
           path: openwrt
-                    
+
       - name: Fix permission
-        run: |
-          cp .github/workflows/scripts/ext-tools.sh openwrt/scripts/ext-tools.sh
-          chown -R buildbot:buildbot openwrt
+        run: chown -R buildbot:buildbot .
 
       - name: Prepare prebuilt tools
         shell: su buildbot -c "sh -e {0}"
@@ -129,8 +127,8 @@ jobs:
           ln -s /prebuilt_tools/staging_dir/host staging_dir/host
           ln -s /prebuilt_tools/build_dir/host build_dir/host
 
-          ./scripts/ext-tools.sh --refresh
-          
+          ../.github/workflows/scripts/ext-tools.sh --refresh
+
       - name: Restore ccache cache
         id: restore-ccache-cache
         uses: actions/cache/restore@v4
@@ -172,7 +170,7 @@ jobs:
         shell: su buildbot -c "sh -e {0}"
         working-directory: openwrt
         run: |
-          make tools/install -j$(nproc) BUILD_LOG=1 || ret=$? .github/workflows/scripts/show_build_failures.sh
+          make tools/install -j$(nproc) BUILD_LOG=1 || ret=$? ../.github/workflows/scripts/show_build_failures.sh
           echo "${{ hashFiles('openwrt/include/**','openwrt/tools/**') }}" > .toolshash 
 
       - name: Upload logs
@@ -214,7 +212,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           INPUT_REPOSITORY: ${{ github.repository }}
           INPUT_KEY: ${{ steps.restore-ccache-cache.outputs.cache-primary-key }}
-                    
+
       - name: Save ccache cache
         id: save-ccache-cache
         uses: actions/cache/save@v4

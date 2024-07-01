@@ -89,7 +89,7 @@ jobs:
         if: needs.determine-container-info.outputs.use_tools_container == 'true'
         run: |
           TOOLSHASH=$(echo ${{ hashFiles('openwrt/include/**','openwrt/tools/**') }})
-          [ -f /.toolshash ] && [ $(grep -c "$TOOLSHASH" /.toolshash) -eq 1 ] || echo "rebuild=true" | tee -a "$GITHUB_OUTPUT"
+          [ -f /.toolshash ] && [ $(grep -c "$TOOLSHASH" /.toolshash) -eq 1 ] && [ ${{ inputs.build_tools }} != 'true'] || echo "rebuild=true" | tee -a "$GITHUB_OUTPUT"
 
   build:
     name: Build tools
@@ -120,6 +120,7 @@ jobs:
         run: chown -R buildbot:buildbot .
 
       - name: Prepare prebuilt tools
+        if: needs.check.outputs.rebuild == 'true'
         shell: su buildbot -c "sh -e {0}"
         working-directory: openwrt
         run: |

@@ -88,7 +88,7 @@ jobs:
         id: validate
         if: needs.determine-container-info.outputs.use_tools_container == 'true'
         run: |
-          TOOLSHASH=$(echo ${{ hashFiles('openwrt/include/**','openwrt/tools/**',actions-shared-workflows/.github/dockerfiles/Dockerfile.tools) }})
+          TOOLSHASH=$(echo ${{ hashFiles('openwrt/include/**','openwrt/tools/**') }})
           [ -f /.toolshash ] && [ $(grep -c "$TOOLSHASH" /.toolshash) -eq 1 ] || echo "rebuild=true" | tee -a "$GITHUB_OUTPUT"
 
   build:

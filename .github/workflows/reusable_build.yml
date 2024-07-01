@@ -764,6 +764,7 @@ jobs:
         run: |
           TOOLCHAIN_FILE=$(ls bin/targets/${{inputs.target }}/${{ inputs.subtarget }}/* | grep toolchain)
           echo "toolchain-file=$TOOLCHAIN_FILE" >> $GITHUB_OUTPUT
+          tar -cf toolchain.tar.xz build_dir/ staging_dir/ .ccache/ -I 'xz -T0' 
 
       - name: Upload prebuilt toolchain
         if: inputs.upload_external_toolchain == true
@@ -773,9 +774,7 @@ jobs:
           path: |
             openwrt/${{ steps.get-toolchain-file.outputs.toolchain-file }}
             openwrt/.toolchainhash
-            openwrt/build_dir 
-            openwrt/staging_dir
-            openwrt/.ccache
+            openwrt/toolchain.tar.xz
           retention-days: 1
 
       # - name: Archive Firmware

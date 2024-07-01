@@ -139,10 +139,10 @@ jobs:
       author: ${{ inputs.author}}
       build_toolchain: true
       build_kernel: true
-      build_external_toolchain: ${{ inputs.build_toolchain || 'true'}}
-      upload_external_toolchain: ${{ inputs.build_toolchain || 'true'}}
-      build_prebuild_toolchain: ${{ inputs.build_prebuild_toolchain || 'true'}}
-      upload_prebuild_toolchain: ${{ inputs.build_prebuild_toolchain || 'true'}}
+      build_external_toolchain: ${{ inputs.build_toolchain || true }}
+      upload_external_toolchain: ${{ inputs.build_toolchain || true }}
+      build_prebuild_toolchain: ${{ inputs.build_prebuild_toolchain || true }}
+      upload_prebuild_toolchain: ${{ inputs.build_prebuild_toolchain || true }}
 
   push-toolchain-container:
     name: Push Target Toolchain container

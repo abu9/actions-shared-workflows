@@ -124,7 +124,7 @@ jobs:
 
   build:
     name: Build Target Toolchain
-    if: ${{ !cancelled() && inputs.build_toolchain || inputs.build_prebuild_toolchain }}
+    if: ${{ !cancelled() && ( inputs.build_toolchain || inputs.build_prebuild_toolchain ) }}
     needs: [build-linux-buildbot, push-tools-container ]
     permissions:
       contents: read
@@ -137,12 +137,13 @@ jobs:
       repo_url: ${{ inputs.repo_url }}
       repo_branch: ${{ inputs.repo_branch }}  
       author: ${{ inputs.author}}
+      container_name: tools
       build_toolchain: true
       build_kernel: true
-      build_external_toolchain: ${{ inputs.build_toolchain || true }}
-      upload_external_toolchain: ${{ inputs.build_toolchain || true }}
-      build_prebuild_toolchain: ${{ inputs.build_prebuild_toolchain || true }}
-      upload_prebuild_toolchain: ${{ inputs.build_prebuild_toolchain || true }}
+      build_external_toolchain: ${{ inputs.build_toolchain }}
+      upload_external_toolchain: ${{ inputs.build_toolchain }}
+      build_prebuild_toolchain: ${{ inputs.build_prebuild_toolchain }}
+      upload_prebuild_toolchain: ${{ inputs.build_prebuild_toolchain }}
 
   push-toolchain-container:
     name: Push Target Toolchain container

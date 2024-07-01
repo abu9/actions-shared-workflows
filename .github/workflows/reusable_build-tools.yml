@@ -51,7 +51,7 @@ jobs:
         id: check-container
         run: |
           USE_TOOLS_CONTAINER=false
-          CONTAINER_PATH=ghcr.io/openwrt/buildbot/buildworker-v3.8.0:v9
+          CONTAINER_PATH=ghcr.io/openwrt/buildbot/buildworker-v3.11.1
 
           GHCR_TOKEN=$(echo ${{ secrets.GITHUB_TOKEN }} | base64)
           GHCR_HEADER="Authorization: Bearer ${GHCR_TOKEN}"

@@ -30,38 +30,17 @@ on:
         type: boolean
       build_kernel:
         type: boolean
-      build_all_modules:
-        type: boolean
-      build_all_kmods:
-        type: boolean
-      build_dtb:
-        type: boolean
-      build_all_boards:
-        type: boolean
       use_openwrt_container:
         type: boolean
         # default: true
-      coverity_project_name:
-        type: string
-        default: OpenWrt
-      coverity_check_packages:
-        type: string
-      coverity_compiler_template_list:
-        type: string
-        default: >-
-          arm-openwrt-linux-gcc
-      coverity_force_compile_packages:
-        type: string
-        default: >-
-          curl
-          libnl
-          mbedtls
-          wolfssl
-          openssl
       build_external_toolchain:
         type: boolean
       upload_external_toolchain:
         type: boolean
+      build_prebuild_toolchain:
+        type: boolean        
+      upload_prebuild_toolchain:
+        type: boolean        
       use_ccache_cache:
         type: boolean
         default: true
@@ -72,7 +51,6 @@ on:
         type: boolean
       check:
         type: boolean
-        default: true
       check_packages_list:
         type: string
       repo_url:
@@ -132,7 +110,7 @@ jobs:
           CONTAINER_NAME=${{ inputs.container_name }}
           CONTAINER_TAG=${{ inputs.author }}_${{ inputs.repo_branch }}
 
-          if [ "$CONTAINER_NAME" = "toolchain" ]; then
+          if [ "$CONTAINER_NAME" = "toolchain" -o "$CONTAINER_NAME" = "pre-toolchain" ]; then
             GHCR_TOKEN=$(echo ${{ secrets.GITHUB_TOKEN }} | base64)
             GHCR_HEADER="Authorization: Bearer ${GHCR_TOKEN}"
             GHCR_MANIFEST_LINK=https://ghcr.io/v2/${{ steps.lower_owner.outputs.owner_lc }}/${{ inputs.container_name }}/manifests/${{ inputs.target }}-${{ inputs.subtarget }}-"$CONTAINER_TAG"
@@ -175,7 +153,7 @@ jobs:
   check:
     name: Check packages for ${{ inputs.target }}/${{ inputs.subtarget }}
     needs: setup_build
-    if: inputs.check == true && ( github.event_name == 'push' || inputs.check_packages_list != '' )
+    if: inputs.check == true
     runs-on: ubuntu-latest
 
     container: ghcr.io/${{ needs.setup_build.outputs.container }}
@@ -202,9 +180,9 @@ jobs:
         shell: su buildbot -c "sh -e {0}"
         working-directory: openwrt
         run: |
-          mkdir -p staging_dir build_dir
-          ln -s /prebuilt_tools/staging_dir/host staging_dir/host
-          ln -s /prebuilt_tools/build_dir/host build_dir/host
+          [! -d staging_dir]&&[! -d build_dir] && mkdir -p staging_dir build_dir
+          ln -s /prebuilt_tools/staging_dir staging_dir
+          ln -s /prebuilt_tools/build_dir build_dir
 
           ../.github/workflows/scripts/ext-tools.sh --refresh
 
@@ -238,7 +216,7 @@ jobs:
         run: make toolchain/download toolchain/check FIXUP=1 -j$(nproc) BUILD_LOG=1 || ret=$? ../.github/workflows/scripts/show_build_failures.sh
 
       - name: Download and check packages
-        if: inputs.build_all_modules == true || inputs.build_all_kmods == true || inputs.build_full == true
+        if: inputs.build_full == true
         shell: su buildbot -c "sh -e {0}"
         working-directory: openwrt
         run: |
@@ -310,6 +288,9 @@ jobs:
           if [ -d /external-toolchain/ ]; then
             echo "toolchain-type=external_container" >> $GITHUB_OUTPUT
             exit 0
+          elif [ -d /prebuild-toolchain/ ]; then
+            echo "toolchain-type=prebuild_container" >> $GITHUB_OUTPUT
+            exit 0
           fi
 
           TOOLCHAIN_PATH=snapshots
@@ -362,19 +343,6 @@ jobs:
           echo "TOOLCHAIN_PATH=$TOOLCHAIN_PATH" >> "$GITHUB_ENV"
           echo "DOWNLOADSERVER=$DOWNLOADSERVER" >> "$GITHUB_ENV"
 
-      - name: Download and extract ccache cache from s3
-        id: restore-ccache-cache-s3
-        if: inputs.use_ccache_cache == true
-        working-directory: openwrt
-        run: |
-          S3_LINK=https://s3-ccache.openwrt-ci.ansuel.com
-          CCACHE_TAR=${{ needs.setup_build.outputs.ccache_name }}.tar
-
-          # if curl -o /dev/null -s --head --fail $S3_LINK/$CCACHE_TAR; then
-          #   wget -O - $S3_LINK/$CCACHE_TAR | tar -xf -
-          #   echo "cache-hit=true" >> $GITHUB_OUTPUT
-          # fi
-
       - name: Fix permission
         run: chown -R buildbot:buildbot .
 
@@ -382,19 +350,19 @@ jobs:
         shell: su buildbot -c "sh -e {0}"
         working-directory: openwrt
         run: |
-          mkdir -p staging_dir build_dir
-          ln -s /prebuilt_tools/staging_dir/host staging_dir/host
-          ln -s /prebuilt_tools/build_dir/host build_dir/host
+          [! -d staging_dir]&&[! -d build_dir] && mkdir -p staging_dir build_dir
+          ln -s /prebuilt_tools/staging_dir staging_dir
+          ln -s /prebuilt_tools/build_dir build_dir
 
           ../.github/workflows/scripts/ext-tools.sh --refresh
 
       - name: Prepare custom scripts
         if: inputs.build_full == true
         shell: su buildbot -c "sh -e {0}"
-        continue-on-error: true
         run: |
           [ -d "files" ] && mv -f files openwrt/files
           [ -e "${FEEDS_CONF}" ] && cp -f "${FEEDS_CONF}" openwrt/feeds.conf.default
+          echo "done"
 
       - name: Load pre-custom script
         if: inputs.build_full == true
@@ -414,7 +382,7 @@ jobs:
 
       - name: Restore ccache cache
         id: restore-ccache-cache
-        if: inputs.use_ccache_cache == true && steps.restore-ccache-cache-s3.outputs.cache-hit != 'true'
+        if: inputs.use_ccache_cache == true
         uses: actions/cache/restore@v4
         with:
           path: openwrt/.ccache
@@ -423,19 +391,6 @@ jobs:
             ${{ needs.setup_build.outputs.ccache_name }}-
             ccache-kernel-${{ needs.setup_build.outputs.ccache_tag}}-${{ hashFiles('openwrt/include/kernel-**') }}
             ccache-kernel-${{ needs.setup_build.outputs.ccache_tag}}-
-
-      - name: Download external toolchain/sdk
-        if: inputs.build_toolchain == false && steps.parse-toolchain.outputs.toolchain-type != 'internal' && steps.parse-toolchain.outputs.toolchain-type != 'external_container'
-        shell: su buildbot -c "sh -e {0}"
-        working-directory: openwrt
-        run: |
-          wget ${{ env.DOWNLOADSERVER }}/${{ env.TOOLCHAIN_PATH }}/targets/${{ inputs.target }}/${{ inputs.subtarget }}/${{ env.TOOLCHAIN_FILE }}.tar.xz
-          wget ${{ env.DOWNLOADSERVER }}/${{ env.TOOLCHAIN_PATH }}/targets/${{ inputs.target }}/${{ inputs.subtarget }}/sha256sums.asc
-          wget ${{ env.DOWNLOADSERVER }}/${{ env.TOOLCHAIN_PATH }}/targets/${{ inputs.target }}/${{ inputs.subtarget }}/sha256sums
-          gpg --with-fingerprint --verify sha256sums.asc
-          sha256sum --check --ignore-missing sha256sums
-          tar --xz -xf ${{ env.TOOLCHAIN_FILE }}.tar.xz
-          rm ${{ env.TOOLCHAIN_FILE }}.tar.xz sha256sums
 
       - name: Clean configuration
         shell: su buildbot -c "sh -e {0}"
@@ -455,42 +410,6 @@ jobs:
         if: inputs.build_full == true
         shell: su buildbot -c "sh -e {0}"     
         run: cp -f ${{ inputs.config_name }} openwrt/.config
-
-      - name: Configure testing kernel
-        if: inputs.testing == true
-        shell: su buildbot -c "sh -e {0}"
-        working-directory: openwrt
-        run: |
-          echo CONFIG_TESTING_KERNEL=y >> .config
-
-      # - name: Configure KERNEL_WERROR
-      #   shell: su buildbot -c "sh -e {0}"
-      #   working-directory: openwrt
-      #   run: |
-      #     echo CONFIG_KERNEL_WERROR=y >> .config
-
-      - name: Configure all kernel modules
-        if: inputs.build_all_kmods == true
-        shell: su buildbot -c "sh -e {0}"
-        working-directory: openwrt
-        run: |
-          echo CONFIG_ALL_KMODS=y >> .config
-
-      - name: Configure all modules
-        if: inputs.build_all_modules == true
-        shell: su buildbot -c "sh -e {0}"
-        working-directory: openwrt
-        run: |
-          echo CONFIG_ALL=y >> .config
-
-      - name: Configure all boards
-        if: inputs.build_all_boards == true
-        shell: su buildbot -c "sh -e {0}"
-        working-directory: openwrt
-        run: |
-          echo CONFIG_TARGET_MULTI_PROFILE=y >> .config
-          echo CONFIG_TARGET_PER_DEVICE_ROOTFS=y >> .config
-          echo CONFIG_TARGET_ALL_PROFILES=y >> .config
 
         # ccache for some reason have problem detecting compiler type
         # with external toolchain. This cause the complete malfunction
@@ -636,19 +555,6 @@ jobs:
         working-directory: openwrt
         run: make package/linux/compile -j$(nproc) BUILD_LOG=1 || ret=$? ../.github/workflows/scripts/show_build_failures.sh
 
-      - name: Build DTBs
-        if: inputs.build_dtb == true
-        shell: su buildbot -c "sh -e {0}"
-        working-directory: openwrt
-        run: |
-          # Check if special dtb makefile target is available
-          # For this to correctly work, a .config is required but this is already done by
-          # previous steps
-          TOPDIR=$(pwd) make -C target/linux dtb -q >/dev/null 2>/dev/null || ret=$?
-          [ $ret = 2 ] && exit 0
-
-          make target/linux/dtb -j$(nproc) BUILD_LOG=1 || ret=$? ../.github/workflows/scripts/show_build_failures.sh
-
       - name: Build everything
         if: inputs.build_full == true
         shell: su buildbot -c "sh -e {0}"
@@ -663,68 +569,12 @@ jobs:
           make target/toolchain/compile -j$(nproc) BUILD_LOG=1 || ret=$? ../.github/workflows/scripts/show_build_failures.sh
           echo "${{ hashFiles('openwrt/toolchain/**') }}" > .toolchainhash
 
-      - name: Coverity prepare toolchain
-        if: inputs.coverity_check_packages != ''
-        shell: su buildbot -c "sh -e {0}"
-        working-directory: openwrt
-        run: |
-          wget -q https://scan.coverity.com/download/linux64 --post-data "token=${{ secrets.coverity_api_token }}&project=${{ inputs.coverity_project_name }}" -O coverity.tar.gz
-          wget -q https://scan.coverity.com/download/linux64 --post-data "token=${{ secrets.coverity_api_token }}&project=${{ inputs.coverity_project_name }}&md5=1" -O coverity.tar.gz.md5
-          echo ' coverity.tar.gz' >> coverity.tar.gz.md5
-          md5sum -c coverity.tar.gz.md5
-
-          mkdir cov-analysis-linux64
-          tar xzf coverity.tar.gz --strip 1 -C cov-analysis-linux64
-          export PATH=$(pwd)/cov-analysis-linux64/bin:$PATH
-
-          for template in ${{ inputs.coverity_compiler_template_list }}; do
-            cov-configure --template --comptype gcc --compiler "$template"
-          done
-
-      - name: Clean and recompile packages with Coverity toolchain
-        if: inputs.coverity_check_packages != ''
-        shell: su buildbot -c "bash {0}"
-        working-directory: openwrt
-        run: |
-          set -o pipefail -o errexit
-
-          coverity_check_packages=(${{ inputs.coverity_check_packages }})
-          printf -v clean_packages "package/%s/clean " "${coverity_check_packages[@]}"
-          make -j$(nproc) BUILD_LOG=1 $clean_packages || ret=$? ../.github/workflows/scripts/show_build_failures.sh
-
-          coverity_force_compile_packages=(${{ inputs.coverity_force_compile_packages }})
-          printf -v force_compile_packages "package/%s/compile " "${coverity_force_compile_packages[@]}"
-          make -j$(nproc) BUILD_LOG=1 $force_compile_packages || ret=$? ../.github/workflows/scripts/show_build_failures.sh
-
-          printf -v compile_packages "package/%s/compile " "${coverity_check_packages[@]}"
-          export PATH=$(pwd)/cov-analysis-linux64/bin:$PATH
-          cov-build --dir cov-int make -j $(nproc) BUILD_LOG=1 $compile_packages || ret=$? ../.github/workflows/scripts/show_build_failures.sh
-
-      - name: Upload build to Coverity for analysis
-        if: inputs.coverity_check_packages != ''
-        shell: su buildbot -c "sh -e {0}"
-        working-directory: openwrt
-        run: |
-          tar czf cov-int.tar.gz ./cov-int
-          curl \
-            --form token="${{ secrets.coverity_api_token }}" \
-            --form email="contact@openwrt.org" \
-            --form file=@cov-int.tar.gz \
-            --form version="${{ inputs.repo_branch }}-${{ github.sha }}" \
-            --form description="OpenWrt ${{ inputs.repo_branch }}-${{ github.sha }}" \
-            "https://scan.coverity.com/builds?project=${{ inputs.coverity_project_name }}"
-
       - name: Upload logs
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: ${{ inputs.target }}-${{ inputs.subtarget }}${{ inputs.testing == true && '-testing' || '' }}-logs
           path: "openwrt/logs"
-
-      - name: Cleanup dl/build_dir/staging_dir to make some space
-        working-directory: openwrt
-        if: github.event_name == 'push'
-        run: rm -rf dl build_dir staging_dir
 
       - name: Delete already present ccache cache
         if: steps.restore-ccache-cache.outputs.cache-hit == 'true' && inputs.use_ccache_cache == true
@@ -764,7 +614,6 @@ jobs:
         run: |
           TOOLCHAIN_FILE=$(ls bin/targets/${{inputs.target }}/${{ inputs.subtarget }}/* | grep toolchain)
           echo "toolchain-file=$TOOLCHAIN_FILE" >> $GITHUB_OUTPUT
-          tar -cf toolchain.tar.zst build_dir/ staging_dir/ .ccache/ -I 'zstd -T0 -10' 
 
       - name: Upload prebuilt toolchain
         if: inputs.upload_external_toolchain == true
@@ -774,14 +623,22 @@ jobs:
           path: |
             openwrt/${{ steps.get-toolchain-file.outputs.toolchain-file }}
             openwrt/.toolchainhash
+
+      - name: Archive prebuilt toolchain
+        if: inputs.upload_prebuild_toolchain == true
+        shell: su buildbot -c "sh -e {0}"
+        working-directory: openwrt
+        run: tar -cf toolchain.tar.zst -I 'zstd -T0 -10' staging_dir/ build_dir/ .ccache/
+            
+      - name: Upload prebuilt toolchain
+        if: inputs.upload_prebuild_toolchain == true
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.target }}-${{ inputs.subtarget }}-prebuild-toolchain
+          path: |
+            openwrt/.toolchainhash
             openwrt/toolchain.tar.zst
           retention-days: 1
-
-      # - name: Archive Firmware
-      #   if: inputs.build_full == true
-      #   shell: su buildbot -c "sh -e {0}"
-      #   working-directory: openwrt
-      #   run: tar -cf tools.tar staging_dir/host build_dir/host
 
       - name: Upload Firmware
         if: inputs.build_full == true

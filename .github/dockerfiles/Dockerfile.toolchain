@@ -1,9 +1,6 @@
-ARG OWNER_LC
-ARG CONTAINER_TAG
+FROM ghcr.io/openwrt/buildbot/buildworker-v3.8.0:v9
 
-FROM ghcr.io/$OWNER_LC/tools:$CONTAINER_TAG
-
-ARG TOOLCHAIN_NAME
-
-ADD $TOOLCHAIN_NAME /external-toolchain/
+COPY --chown=buildbot staging_dir /prebuilt_tools/staging_dir
+COPY --chown=buildbot build_dir /prebuilt_tools/build_dir
 COPY --chown=buildbot .toolchainhash /.toolchainhash
+COPY --chown=buildbot .ccache /.ccache

@@ -141,6 +141,7 @@ jobs:
       repo_branch: ${{ inputs.repo_branch }}  
       author: ${{ inputs.author}}
       build_toolchain: true
+      build_kernel: true
       build_external_toolchain: true
       upload_external_toolchain: true
 

@@ -773,6 +773,9 @@ jobs:
           path: |
             openwrt/${{ steps.get-toolchain-file.outputs.toolchain-file }}
             openwrt/.toolchainhash
+            build_dir 
+            staging_dir
+            .ccache
           retention-days: 1
 
       # - name: Archive Firmware

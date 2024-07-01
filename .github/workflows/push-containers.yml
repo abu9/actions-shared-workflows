@@ -173,11 +173,11 @@ jobs:
         with:
           name: ${{ inputs.target }}-${{ inputs.subtarget }}-external-toolchain
 
-      - name: Find external toolchain name
-        id: get-toolchain-name
-        run: |
-          TOOLCHAIN_NAME=$(ls bin/targets/${{inputs.target }}/${{ inputs.subtarget }}/* | grep toolchain)
-          [ -n "$TOOLCHAIN_NAME" ] && echo "toolchain-name=$TOOLCHAIN_NAME" >> $GITHUB_OUTPUT
+      # - name: Find external toolchain name
+      #   id: get-toolchain-name
+      #   run: |
+      #     TOOLCHAIN_NAME=$(ls bin/targets/${{inputs.target }}/${{ inputs.subtarget }}/* | grep toolchain)
+      #     [ -n "$TOOLCHAIN_NAME" ] && echo "toolchain-name=$TOOLCHAIN_NAME" >> $GITHUB_OUTPUT
 
       - name: Login to GitHub Container Registry
         uses: docker/login-action@v3

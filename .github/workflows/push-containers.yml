@@ -168,11 +168,18 @@ jobs:
           sparse-checkout: .github/dockerfiles/Dockerfile.toolchain
           sparse-checkout-cone-mode: false
 
-      - name: Download toolchain from build job
+      - name: Download external toolchain from build job
+        if: inputs.build_toolchain
         uses: actions/download-artifact@v4
         with:
-          name: ${{ inputs.target }}-${{ inputs.subtarget }}-${{ inputs.build_prebuild_toolchain && 'prebuild' || 'external' }}-toolchain
+          name: ${{ inputs.target }}-${{ inputs.subtarget }}-external-toolchain
 
+      - name: Download prebuild toolchain from build job
+        if: inputs.build_prebuild_toolchain
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.target }}-${{ inputs.subtarget }}-prebuild-toolchain
+  
       - name: Find external toolchain name
         if: inputs.build_toolchain
         id: get-toolchain-name

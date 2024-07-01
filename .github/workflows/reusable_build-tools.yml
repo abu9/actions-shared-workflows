@@ -57,7 +57,7 @@ jobs:
           GHCR_HEADER="Authorization: Bearer ${GHCR_TOKEN}"
           GHCR_MANIFEST_LINK=https://ghcr.io/v2/${{ inputs.owner-lc }}/tools/manifests/${{ inputs.container-tag }}
           # Check if container exist
-          if [ $(curl -s -o /dev/null -w "%{http_code}" -H "$GHCR_HEADER" -I "$GHCR_MANIFEST_LINK") == 200 -a ! echo ${{ inputs.build_tools }}]; then
+          if [ $(curl -s -o /dev/null -w "%{http_code}" -H "$GHCR_HEADER" -I "$GHCR_MANIFEST_LINK") == 200 -a ! ${{ inputs.build_tools }}]; then
             USE_TOOLS_CONTAINER=true
             CONTAINER_PATH=ghcr.io/${{ inputs.owner-lc }}/tools:${{ inputs.container-tag }}
           fi

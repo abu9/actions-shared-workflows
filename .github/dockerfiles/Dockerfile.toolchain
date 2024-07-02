@@ -1,4 +1,4 @@
 FROM ghcr.io/openwrt/buildbot/buildworker-v3.11.1
 
 COPY --chown=buildbot toolchain.tar.zst /prebuilt_toolchain
-COPY --chown=buildbot .toolchainhash /.toolchainhash
+COPY --chown=buildbot .toolchainhash .toolshash /

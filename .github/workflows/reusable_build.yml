@@ -576,7 +576,6 @@ jobs:
         working-directory: openwrt
         run: |
           make target/toolchain/compile -j$(nproc) BUILD_LOG=1 || ret=$? ../.github/workflows/scripts/show_build_failures.sh
-          echo "${{ hashFiles('openwrt/toolchain/**') }}" > .toolchainhash
 
       - name: Upload logs
         if: failure()
@@ -623,6 +622,8 @@ jobs:
         run: |
           TOOLCHAIN_FILE=$(ls bin/targets/${{inputs.target }}/${{ inputs.subtarget }}/* | grep toolchain)
           echo "toolchain-file=$TOOLCHAIN_FILE" >> $GITHUB_OUTPUT
+          echo "${{ hashFiles('openwrt/toolchain/**') }}" > .toolchainhash
+          echo "${{ hashFiles('openwrt/include/**','openwrt/tools/**') }}" > .toolshash 
 
       - name: Upload prebuilt toolchain
         if: inputs.upload_external_toolchain == true
@@ -632,12 +633,16 @@ jobs:
           path: |
             openwrt/${{ steps.get-toolchain-file.outputs.toolchain-file }}
             openwrt/.toolchainhash
+            openwrt/.toolshash
 
       - name: Archive prebuilt toolchain
         if: inputs.upload_prebuild_toolchain == true
         shell: su buildbot -c "sh -e {0}"
         working-directory: openwrt
-        run: tar -cf toolchain.tar.zst -I 'zstd -T0 -6' staging_dir/ build_dir/ .ccache/
+        run: |
+          tar -cf toolchain.tar.zst -I 'zstd -T0 -6' staging_dir/ build_dir/ .ccache/
+          echo "${{ hashFiles('openwrt/toolchain/**') }}" > .toolchainhash
+          echo "${{ hashFiles('openwrt/include/**','openwrt/tools/**') }}" > .toolshash 
             
       - name: Upload prebuilt toolchain
         if: inputs.upload_prebuild_toolchain == true
@@ -646,6 +651,7 @@ jobs:
           name: ${{ inputs.target }}-${{ inputs.subtarget }}-prebuild-toolchain
           path: |
             openwrt/.toolchainhash
+            openwrt/.toolshash
             openwrt/toolchain.tar.zst
           retention-days: 1
 

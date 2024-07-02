@@ -297,7 +297,7 @@ jobs:
           if [ -d /external-toolchain/ ]; then
             echo "toolchain-type=external_container" >> $GITHUB_OUTPUT
             exit 0
-          elif [ -d /prebuild-toolchain/ ]
+          elif [ -d /prebuild-toolchain/ ]; then
             echo "toolchain-type=prebuild_container" >> $GITHUB_OUTPUT
             exit 0
           fi
@@ -328,7 +328,7 @@ jobs:
                 TOOLCHAIN_PATH=releases/$(echo $latest_tag | sed 's/^v//')
               fi
             fi
-          elif ${{ inputs.author}} = "immortalwrt" then;
+          elif ${{ inputs.author}} = "immortalwrt"; then
             TOOLCHAIN_PATH=releases/${{ inputs.repo_branch }}-SNAPSHOT
             DOWNLOADSERVER="https://mirrors.vsean.net/"
           fi

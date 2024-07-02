@@ -97,6 +97,7 @@ jobs:
         with:
           repository: abu9/actions-shared-workflows
           sparse-checkout: .github/dockerfiles/Dockerfile.tools
+          ref: ${{ github.ref_name }}
           sparse-checkout-cone-mode: false
 
       - name: Download prebuilt tools from build job
@@ -166,6 +167,7 @@ jobs:
         with:
           repository: abu9/actions-shared-workflows
           sparse-checkout: .github/dockerfiles/Dockerfile.toolchain
+          ref: ${{ github.ref_name }}
           sparse-checkout-cone-mode: false
 
       - name: Download external toolchain from build job

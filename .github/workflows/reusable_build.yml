@@ -85,6 +85,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with: |
+          ref: ${{ github.ref_name }}
+
 
       - name: Set lower case owner name
         id: lower_owner
@@ -165,6 +168,9 @@ jobs:
     steps:
       - name: Checkout master directory
         uses: actions/checkout@v4
+        with: |
+          ref: ${{ github.ref_name }}
+
 
       - name: Checkout openwrt
         uses: actions/checkout@v4
@@ -272,6 +278,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with: |
+          ref: ${{ github.ref_name }}
+
 
       - name: Checkout openwrt
         uses: actions/checkout@v4

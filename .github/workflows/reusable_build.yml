@@ -180,7 +180,7 @@ jobs:
         shell: su buildbot -c "sh -e {0}"
         working-directory: openwrt
         run: |
-          [! -d staging_dir]&&[! -d build_dir] && mkdir -p staging_dir build_dir
+          # [ ! -d staging_dir ] && [ ! -d build_dir ] && mkdir -p staging_dir build_dir
           ln -s /prebuilt_tools/staging_dir staging_dir
           ln -s /prebuilt_tools/build_dir build_dir
 
@@ -350,7 +350,7 @@ jobs:
         shell: su buildbot -c "sh -e {0}"
         working-directory: openwrt
         run: |
-          [! -d staging_dir]&&[! -d build_dir] && mkdir -p staging_dir build_dir
+          # [ ! -d staging_dir ] && [ ! -d build_dir ] && mkdir -p staging_dir build_dir
           ln -s /prebuilt_tools/staging_dir staging_dir
           ln -s /prebuilt_tools/build_dir build_dir
 

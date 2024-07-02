@@ -355,14 +355,14 @@ jobs:
       - name: Fix permission
         run: chown -R buildbot:buildbot .
 
-      - name: Setup Debug Session
-        if: inputs.debug == true
-        env:
-          TMATE_ENCRYPT_PASSWORD: "12345"
-          HOME: "/root"
+      # - name: Setup Debug Session
+      #   if: inputs.debug == true
+      #   env:
+      #     TMATE_ENCRYPT_PASSWORD: "12345"
+      #     HOME: "/root"
 
-        uses: tete1030/safe-debugger-action@master          
-        
+      #   uses: tete1030/safe-debugger-action@master          
+
       - name: Prepare prebuilt tools
         shell: su buildbot -c "sh -e {0}"
         working-directory: openwrt
@@ -370,8 +370,8 @@ jobs:
           # [ ! -d staging_dir ] && [ ! -d build_dir ] && mkdir -p staging_dir build_dir
           [ -d /prebuild_toolchain] && TOOLS_PATH="/prebuild_toolchain" || TOOLS_PATH="/prebuilt_tools"
 
-          ln -s "$TOOLS_PATH"/staging_dir staging_dir
-          ln -s "$TOOLS_PATH"/build_dir build_dir
+          ln -s /prebuild_toolchain/staging_dir staging_dir
+          ln -s /prebuild_toolchain/build_dir build_dir
 
           ../.github/workflows/scripts/ext-tools.sh --refresh
 

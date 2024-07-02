@@ -448,7 +448,7 @@ jobs:
         env:
           SYSTEM_CCACHE_CONF: staging_dir/host/etc/ccache.conf
         run: |
-          [ ! -d staging_dir/host ] mkdir -p staging_dir/host
+          [ ! -d staging_dir/host ] && mkdir -p staging_dir/host
           touch $SYSTEM_CCACHE_CONF
 
           echo compiler_type=gcc >> $SYSTEM_CCACHE_CONF

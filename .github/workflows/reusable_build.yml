@@ -288,14 +288,7 @@ jobs:
           repository: ${{ inputs.repo_url }}
           ref: ${{ inputs.repo_branch }}
           path: openwrt
-
-      - name: Setup Debug Session
-        if: inputs.debug == true
-        env:
-          TMATE_ENCRYPT_PASSWORD: "12345"
-          HOME: "/root"
-
-        uses: tete1030/safe-debugger-action@master          
+        
       - name: Parse toolchain file
         if: inputs.build_toolchain == false
         id: parse-toolchain
@@ -362,6 +355,14 @@ jobs:
       - name: Fix permission
         run: chown -R buildbot:buildbot .
 
+      - name: Setup Debug Session
+        if: inputs.debug == true
+        env:
+          TMATE_ENCRYPT_PASSWORD: "12345"
+          HOME: "/root"
+
+        uses: tete1030/safe-debugger-action@master          
+        
       - name: Prepare prebuilt tools
         shell: su buildbot -c "sh -e {0}"
         working-directory: openwrt

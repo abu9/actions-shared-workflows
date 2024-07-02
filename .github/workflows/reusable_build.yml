@@ -131,7 +131,12 @@ jobs:
 
       - name: Determine container
         id: determine_container
-        run: echo "container=${{ steps.lower_owner.outputs.owner_lc }}/${{ steps.determine_container_name.outputs.container_name }}" >> $GITHUB_OUTPUT
+        run: |
+          if [ ${{ inputs.build_prebuild_toolchain}} = 'true' ]; then
+            echo "container=ghcr.io/openwrt/buildbot/buildworker-v3.11.1" >> $GITHUB_OUTPUT
+          else
+            echo "container=${{ steps.lower_owner.outputs.owner_lc }}/${{ steps.determine_container_name.outputs.container_name }}" >> $GITHUB_OUTPUT
+          fi
 
       - name: Determine ccache info
         id: determine_ccache_info
@@ -364,6 +369,7 @@ jobs:
       #   uses: tete1030/safe-debugger-action@master          
 
       - name: Prepare prebuilt tools
+        if: inputs.build_prebuild_toolchain == false
         shell: su buildbot -c "sh -e {0}"
         working-directory: openwrt
         run: |

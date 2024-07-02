@@ -26,9 +26,81 @@ on:
         type: boolean         
 
 jobs:
+  determine-container-info:
+    name: Determine needed info to push containers
+    # if: ${{ github.repository_owner  == 'openwrt' }}
+    runs-on: ubuntu-latest
+    outputs:
+      owner-lc: ${{ steps.generate-owner-lc.outputs.owner-lc }}
+      container-tag: ${{ steps.determine-container-tag.outputs.container-tag }}
+
+    steps:
+      - name: Set lower case owner name
+        id: generate-owner-lc
+        env:
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          echo "owner-lc=${OWNER,,}" >> "$GITHUB_OUTPUT"
+
+      # Per branch tools container tag
+      # By default stick to latest
+      # For official test targetting openwrt stable branch
+      # Get the branch or parse the tag and push dedicated tools containers
+      # Any branch that will match this pattern openwrt-[0-9][0-9].[0-9][0-9]
+      # will refresh the tools container with the matching tag.
+      # (example branch openwrt-22.03 -> tools:openwrt-22.03)
+      # (example branch openwrt-22.03-test -> tools:openwrt-22.03)
+      - name: Determine tools container tag
+        id: determine-container-tag
+        run: |
+          CONTAINER_TAG=latest
+
+          if [ ${{ github.ref_type }} == "branch" ]; then
+            if echo "${{ inputs.repo_branch }}" | grep -q -E 'openwrt-[0-9][0-9]\.[0-9][0-9]'; then
+              CONTAINER_TAG="$(echo ${{ inputs.repo_branch }} | sed 's/^\(openwrt-[0-9][0-9]\.[0-9][0-9]\).*/\1/')"
+            fi
+          elif [ ${{ github.ref_type }} == "tag" ]; then
+            if echo "${{ inputs.repo_branch }}" | grep -q -E 'v[0-9][0-9]\.[0-9][0-9]\..+'; then
+              CONTAINER_TAG=openwrt-"$(echo ${{ inputs.repo_branch }} | sed 's/v\([0-9][0-9]\.[0-9][0-9]\)\..\+/\1/')"
+            fi
+          fi
+          CONTAINER_TAG=${{ inputs.author }}_"$CONTAINER_TAG"
+          echo "Container tag to push for tools and toolchain is $CONTAINER_TAG"
+          echo "container-tag=$CONTAINER_TAG" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build Target Toolchain
+    if: ${{ !cancelled() && ( inputs.build_toolchain || inputs.build_prebuild_toolchain ) }}
+    permissions:
+      contents: read
+      packages: read
+      actions: write
+    uses: ./.github/workflows/reusable_build.yml
+    with:
+      target: ${{ inputs.target }}
+      subtarget: ${{ inputs.subtarget }}
+      repo_url: ${{ inputs.repo_url }}
+      repo_branch: ${{ inputs.repo_branch }}  
+      author: ${{ inputs.author}}
+      container_name: tools
+      build_toolchain: true
+      # build_kernel: true
+      build_external_toolchain: ${{ inputs.build_toolchain }}
+      upload_external_toolchain: ${{ inputs.build_toolchain }}
+      build_prebuild_toolchain: ${{ inputs.build_prebuild_toolchain }}
+      upload_prebuild_toolchain: ${{ inputs.build_prebuild_toolchain }}
+
   push-toolchain-container:
     name: Push Target Toolchain container
+    if: ${{ !cancelled() && needs.build.outputs.push == 'true' }}
+    needs: [ determine-container-info, build ]
     runs-on: ubuntu-latest
+
+    # strategy:
+    #   fail-fast: False
+    #   matrix:
+    #     include: ${{fromJson(needs.determine-targets.outputs.target)}}
+
     permissions:
       contents: read
       packages: write
@@ -42,13 +114,24 @@ jobs:
           ref: ${{ github.ref_name }}
           sparse-checkout-cone-mode: false
 
+      - name: Download external toolchain from build job
+        if: inputs.build_toolchain
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.target }}-${{ inputs.subtarget }}-external-toolchain
+
       - name: Download prebuild toolchain from build job
         if: inputs.build_prebuild_toolchain
         uses: actions/download-artifact@v4
         with:
-          name: mediatek-filogic-prebuild-toolchain
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          run-id: 9762986203
+          name: ${{ inputs.target }}-${{ inputs.subtarget }}-prebuild-toolchain
+  
+      - name: Find external toolchain name
+        if: inputs.build_toolchain
+        id: get-toolchain-name
+        run: |
+          TOOLCHAIN_NAME=$(ls bin/targets/${{inputs.target }}/${{ inputs.subtarget }}/* | grep toolchain)
+          [ -n "$TOOLCHAIN_NAME" ] && echo "toolchain-name=$TOOLCHAIN_NAME" >> $GITHUB_OUTPUT
 
       - name: Login to GitHub Container Registry
         uses: docker/login-action@v3
@@ -57,11 +140,24 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Build and push external toolchain
+        if: inputs.build_toolchain
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ghcr.io/${{ needs.determine-container-info.outputs.owner-lc }}/toolchain:${{ inputs.target }}-${{ inputs.subtarget }}-${{ needs.determine-container-info.outputs.container-tag }}
+          file: .github/dockerfiles/Dockerfile.external-toolchain
+          build-args: |
+            OWNER_LC=${{ needs.determine-container-info.outputs.owner-lc }}
+            CONTAINER_TAG=${{ needs.determine-container-info.outputs.container-tag }}
+            TOOLCHAIN_NAME=${{ steps.get-toolchain-name.outputs.toolchain-name }}
+
       - name: Build and push prebuild toolchain
         if: inputs.build_prebuild_toolchain
         uses: docker/build-push-action@v5
         with:
           context: .
           push: true
-          tags: ghcr.io/abu9/pre-toolchain:mediatek-filogic-immortalwrt_openwrt-23.05
+          tags: ghcr.io/${{ needs.determine-container-info.outputs.owner-lc }}/pre-toolchain:${{ inputs.target }}-${{ inputs.subtarget }}-${{ needs.determine-container-info.outputs.container-tag }}
           file: .github/dockerfiles/Dockerfile.toolchain

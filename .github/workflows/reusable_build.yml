@@ -640,7 +640,7 @@ jobs:
         shell: su buildbot -c "sh -e {0}"
         working-directory: openwrt
         run: |
-          tar -cf toolchain.tar.zst -I 'zstd -T0 -6' staging_dir/ build_dir/ .ccache/
+          tar -cf toolchain.tar.zst -I 'zstd -T0 -6' -C /prebuilt_tools/ staging_dir/ build_dir/
           echo "${{ hashFiles('openwrt/toolchain/**') }}" > .toolchainhash
           echo "${{ hashFiles('openwrt/include/**','openwrt/tools/**') }}" > .toolshash 
             

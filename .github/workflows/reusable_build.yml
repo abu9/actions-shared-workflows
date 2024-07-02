@@ -360,8 +360,10 @@ jobs:
         working-directory: openwrt
         run: |
           # [ ! -d staging_dir ] && [ ! -d build_dir ] && mkdir -p staging_dir build_dir
-          ln -s /prebuilt_tools/staging_dir staging_dir
-          ln -s /prebuilt_tools/build_dir build_dir
+          [ -d /prebuild_toolchain] && TOOLS_PATH ="/prebuild_toolchain" || TOOLS_PATH ="/prebuilt_tools"
+
+          ln -s $TOOLS_PATH/staging_dir staging_dir
+          ln -s $TOOLS_PATH/build_dir build_dir
 
           ../.github/workflows/scripts/ext-tools.sh --refresh
 

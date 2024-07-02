@@ -297,7 +297,7 @@ jobs:
           if [ -d /external-toolchain/ ]; then
             echo "toolchain-type=external_container" >> $GITHUB_OUTPUT
             exit 0
-          elif [ -d /prebuild-toolchain/ ]; then
+          elif [ -d /prebuild-toolchain/ ]
             echo "toolchain-type=prebuild_container" >> $GITHUB_OUTPUT
             exit 0
           fi

@@ -628,7 +628,7 @@ jobs:
         if: inputs.upload_prebuild_toolchain == true
         shell: su buildbot -c "sh -e {0}"
         working-directory: openwrt
-        run: tar -chf toolchain.tar.zst -I 'zstd -T0 -10' staging_dir/ build_dir/ .ccache/
+        run: tar -cf toolchain.tar.zst -I 'zstd -T0 -6' staging_dir/ build_dir/ .ccache/
             
       - name: Upload prebuilt toolchain
         if: inputs.upload_prebuild_toolchain == true

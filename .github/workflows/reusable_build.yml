@@ -289,6 +289,13 @@ jobs:
           ref: ${{ inputs.repo_branch }}
           path: openwrt
 
+      - name: Setup Debug Session
+        if: inputs.debug == true
+        env:
+          TMATE_ENCRYPT_PASSWORD: "12345"
+          HOME: "/root"
+
+        uses: tete1030/safe-debugger-action@master          
       - name: Parse toolchain file
         if: inputs.build_toolchain == false
         id: parse-toolchain

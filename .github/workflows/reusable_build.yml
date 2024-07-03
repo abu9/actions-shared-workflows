@@ -302,8 +302,8 @@ jobs:
           if [ -d /external-toolchain/ ]; then
             echo "toolchain-type=external_container" >> $GITHUB_OUTPUT
             exit 0
-          elif [ -d /prebuild-toolchain/ ]; then
-            echo "toolchain-type=prebuild_container" >> $GITHUB_OUTPUT
+          elif [ -d /prebuilt-toolchain/ ]; then
+            echo "toolchain-type=prebuilt_container" >> $GITHUB_OUTPUT
             exit 0
           fi
 
@@ -358,7 +358,9 @@ jobs:
           echo "DOWNLOADSERVER=$DOWNLOADSERVER" >> "$GITHUB_ENV"
 
       - name: Fix permission
-        run: chown -R buildbot:buildbot .
+        run: |
+          chown -R buildbot:buildbot . 
+          [ -d /prebuilt_toolchain ] && chown -R buildbot:buildbot /prebuilt_toolchain
 
       # - name: Setup Debug Session
       #   if: inputs.debug == true
@@ -374,10 +376,10 @@ jobs:
         working-directory: openwrt
         run: |
           # [ ! -d staging_dir ] && [ ! -d build_dir ] && mkdir -p staging_dir build_dir
-          [ -d /prebuild_toolchain] && TOOLS_PATH="/prebuild_toolchain" || TOOLS_PATH="/prebuilt_tools"
+          [ -d /prebuilt_toolchain] && TOOLS_PATH="/prebuilt_toolchain" || TOOLS_PATH="/prebuilt_tools"
 
-          ln -s /prebuild_toolchain/staging_dir staging_dir
-          ln -s /prebuild_toolchain/build_dir build_dir
+          ln -s /prebuilt_toolchain/staging_dir staging_dir
+          ln -s /prebuilt_toolchain/build_dir build_dir
 
           ../.github/workflows/scripts/ext-tools.sh --refresh
 

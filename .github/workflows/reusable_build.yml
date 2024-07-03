@@ -362,13 +362,7 @@ jobs:
           chown -R buildbot:buildbot . 
           [ -d /prebuilt_toolchain ] && chown -R buildbot:buildbot /prebuilt_toolchain
 
-      - name: Setup Debug Session
-        if: inputs.debug == true
-        env:
-           TMATE_ENCRYPT_PASSWORD: "12345"
-           HOME: "/root"
-
-        uses: tete1030/safe-debugger-action@master          
+    
 
       - name: Prepare prebuilt tools
         if: inputs.build_prebuild_toolchain == false
@@ -551,6 +545,14 @@ jobs:
         working-directory: openwrt
         run: make tools/install -j$(nproc) BUILD_LOG=1 || ret=$? ../.github/workflows/scripts/show_build_failures.sh
 
+      - name: Setup Debug Session
+        if: inputs.debug == true
+        env:
+           TMATE_ENCRYPT_PASSWORD: "12345"
+           HOME: "/root"
+
+        uses: tete1030/safe-debugger-action@master      
+        
       - name: Build toolchain
         shell: su buildbot -c "sh -e {0}"
         working-directory: openwrt

@@ -376,7 +376,7 @@ jobs:
         working-directory: openwrt
         run: |
           # [ ! -d staging_dir ] && [ ! -d build_dir ] && mkdir -p staging_dir build_dir
-          [ -d /prebuilt_toolchain] && TOOLS_PATH="/prebuilt_toolchain" || TOOLS_PATH="/prebuilt_tools"
+          [ -d /prebuilt_toolchain ] && TOOLS_PATH="/prebuilt_toolchain" || TOOLS_PATH="/prebuilt_tools"
 
           ln -s /prebuilt_toolchain/staging_dir staging_dir
           ln -s /prebuilt_toolchain/build_dir build_dir

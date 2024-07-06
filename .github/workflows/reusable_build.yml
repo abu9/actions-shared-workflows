@@ -375,7 +375,7 @@ jobs:
           ln -s /prebuilt_toolchain/staging_dir staging_dir
           ln -s /prebuilt_toolchain/build_dir build_dir
 
-          find build_dir/toolchain-* -name '.built\*' -exec touch {} \; touch 'staging_dir/toolchain-*/stamp/.*'
+          find build_dir/toolchain-* -name ".built\*" -exec touch {} \; touch "staging_dir/toolchain-*/stamp/.*"
           ../.github/workflows/scripts/ext-tools.sh --refresh
 
       - name: Prepare custom scripts

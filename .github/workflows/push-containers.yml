@@ -95,6 +95,7 @@ jobs:
         with:
           repository: abu9/actions-shared-workflows
           sparse-checkout: .github/dockerfiles/Dockerfile.tools
+          ref: ${{ github.ref_name }}
           sparse-checkout-cone-mode: false
 
       - name: Download prebuilt tools from build job
@@ -128,11 +129,6 @@ jobs:
       contents: read
       packages: read
       actions: write
-
-    # strategy:
-    #   fail-fast: False
-    #   matrix:
-    #     include: ${{fromJson(needs.determine-targets.outputs.target)}}
     uses: ./.github/workflows/reusable_build.yml
     with:
       target: ${{ inputs.target }}
@@ -140,6 +136,7 @@ jobs:
       repo_url: ${{ inputs.repo_url }}
       repo_branch: ${{ inputs.repo_branch }}  
       author: ${{ inputs.author}}
+      container_name: tools
       build_toolchain: true
       build_external_toolchain: true
       upload_external_toolchain: true
@@ -165,6 +162,7 @@ jobs:
         with:
           repository: abu9/actions-shared-workflows
           sparse-checkout: .github/dockerfiles/Dockerfile.toolchain
+          ref: ${{ github.ref_name }}
           sparse-checkout-cone-mode: false
 
       - name: Download external toolchain from build job

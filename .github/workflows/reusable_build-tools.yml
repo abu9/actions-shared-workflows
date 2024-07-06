@@ -201,7 +201,6 @@ jobs:
           path: |
             openwrt/tools.tar
             openwrt/.toolshash
-          retention-days: 1
 
       - name: Delete already present ccache cache
         if: steps.restore-ccache-cache.outputs.cache-hit == 'true'

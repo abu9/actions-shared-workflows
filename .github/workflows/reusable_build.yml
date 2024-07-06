@@ -773,7 +773,6 @@ jobs:
           path: |
             openwrt/${{ steps.get-toolchain-file.outputs.toolchain-file }}
             openwrt/.toolchainhash
-          retention-days: 1
 
       # - name: Archive Firmware
       #   if: inputs.build_full == true

@@ -366,7 +366,7 @@ jobs:
 
       - name: Prepare prebuilt tools
         if: inputs.build_prebuild_toolchain == false
-        shell: su buildbot -c "sh -e {0}"
+        shell: su buildbot -c "bash {0}"
         working-directory: openwrt
         run: |
           # [ ! -d staging_dir ] && [ ! -d build_dir ] && mkdir -p staging_dir build_dir

@@ -205,7 +205,7 @@ jobs:
         if: ${{ matrix.runtime_test && fromJSON(env.HAVE_IPKS) }}
         uses: actions/checkout@v4
         with:
-          repository: openwrt/actions-shared-workflows
+          repository: abu9/actions-shared-workflows
           path: dockerfiles_feeds
           sparse-checkout: |
             .github/scripts/ci_helpers.sh

@@ -6,6 +6,12 @@ on:
       use_openwrt_container:
         type: boolean
         default: true
+      repo_url:
+        required: true
+        type: string
+      repo_branch:
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -64,10 +70,20 @@ jobs:
     container: ghcr.io/${{ needs.determine-container-info.outputs.owner-lc }}/tools:${{ needs.determine-container-info.outputs.container-tag }}
 
     steps:
-      - name: Checkout
+      - name: Checkout openwrt source code
         uses: actions/checkout@v4
         with:
+          repository: ${{ inputs.repo_url }}
+          ref: ${{ inputs.repo_branch }}
           path: openwrt
+
+      - name: Checkout shared workflows tools
+        uses: actions/checkout@v4
+        with:
+          repository: abu9/actions-shared-workflows
+          path: shared-workflows
+          sparse-checkout: |
+            .github/workflows/scripts
 
       - name: Fix permission
         run: chown -R buildbot:buildbot openwrt
@@ -80,7 +96,7 @@ jobs:
           ln -s /prebuilt_tools/staging_dir/host staging_dir/host
           ln -s /prebuilt_tools/build_dir/host build_dir/host
 
-          ./scripts/ext-tools.sh --refresh
+          ../shared-workflows/.github/workflows/scripts/ext-tools.sh --refresh
 
       - name: Set configs for tools container
         shell: su buildbot -c "sh -e {0}"
@@ -100,23 +116,23 @@ jobs:
       - name: Compile needed host tools
         shell: su buildbot -c "sh -e {0}"
         working-directory: openwrt
-        run: make tools/zstd/compile tools/quilt/compile -j$(nproc) BUILD_LOG=1 || ret=$? .github/workflows/scripts/show_build_failures.sh
+        run: make tools/zstd/compile tools/quilt/compile -j$(nproc) BUILD_LOG=1 || ret=$? ../shared-workflows/.github/workflows/scripts/show_build_failures.sh
 
       - name: Download and check tools
         shell: su buildbot -c "sh -e {0}"
         working-directory: openwrt
-        run: make tools/download tools/check FIXUP=1 -j$(nproc) BUILD_LOG=1 || ret=$? .github/workflows/scripts/show_build_failures.sh
+        run: make tools/download tools/check FIXUP=1 -j$(nproc) BUILD_LOG=1 || ret=$? ../shared-workflows/.github/workflows/scripts/show_build_failures.sh
 
       - name: Refresh tools
         shell: su buildbot -c "sh -e {0}"
         working-directory: openwrt
-        run: make tools/refresh -j$(nproc) BUILD_LOG=1 || ret=$? .github/workflows/scripts/show_build_failures.sh
+        run: make tools/refresh -j$(nproc) BUILD_LOG=1 || ret=$? ../shared-workflows/.github/workflows/scripts/show_build_failures.sh
 
       - name: Validate checked tools
         shell: su buildbot -c "sh -e {0}"
         working-directory: openwrt
         run: |
-          . .github/workflows/scripts/ci_helpers.sh
+          . ../shared-workflows/.github/workflows/scripts/ci_helpers.sh
 
           if git diff --name-only --exit-code; then
             success "All tools seems ok"

@@ -5,6 +5,12 @@ on:
     inputs:
       generate_prebuilt_artifacts:
         type: boolean
+      repo_url:
+        required: true
+        type: string
+      repo_branch:
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -15,14 +21,34 @@ jobs:
     runs-on: ubuntu-latest
     container: ghcr.io/openwrt/buildbot/buildworker-v3.8.0:v9
 
+    permissions:
+      contents: read
+      packages: read
+      actions: write
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Checkout openwrt source code
+        uses: actions/checkout@v4
         with:
+          repository: ${{ inputs.repo_url }}
+          ref: ${{ inputs.repo_branch }}
           path: openwrt
 
       - name: Fix permission
-        run: chown -R buildbot:buildbot openwrt
+        run: chown -R buildbot:buildbot .
+
+      - name: Prepare prebuilt tools
+        shell: su buildbot -c "sh -e {0}"
+        working-directory: openwrt
+        run: |
+          mkdir -p staging_dir build_dir
+          ln -s /prebuilt_tools/staging_dir/host staging_dir/host
+          ln -s /prebuilt_tools/build_dir/host build_dir/host
+
+          ../.github/workflows/scripts/ext-tools.sh --refresh
 
       - name: Set configs for tools container
         shell: su buildbot -c "sh -e {0}"
@@ -42,7 +68,9 @@ jobs:
       - name: Build tools
         shell: su buildbot -c "sh -e {0}"
         working-directory: openwrt
-        run: make tools/install -j$(nproc) BUILD_LOG=1 || ret=$? .github/workflows/scripts/show_build_failures.sh
+        run: |
+          make tools/install -j$(nproc) BUILD_LOG=1 || ret=$? ../.github/workflows/scripts/show_build_failures.sh
+          echo "${{ hashFiles('openwrt/include/**','openwrt/tools/**') }}" > .toolshash 
 
       - name: Upload logs
         if: always()
@@ -62,12 +90,13 @@ jobs:
         if: inputs.generate_prebuilt_artifacts == true
         shell: su buildbot -c "sh -e {0}"
         working-directory: openwrt
-        run: tar -cf tools.tar staging_dir/host build_dir/host
+        run: tar -chf tools.tar staging_dir/host build_dir/host
 
       - name: Upload prebuilt tools
         if: inputs.generate_prebuilt_artifacts == true
         uses: actions/upload-artifact@v4
         with:
           name: linux-buildbot-prebuilt-tools
-          path: openwrt/tools.tar
-          retention-days: 1
+          path: |
+            openwrt/tools.tar
+            openwrt/.toolshash
